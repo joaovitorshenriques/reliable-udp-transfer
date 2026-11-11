@@ -17,7 +17,7 @@ Datagramas binários com inteiros em ordem de rede (big-endian). Máximo de 1200
 
 CRC calculado sobre cabeçalho + payload, com campo CRC zerado. Não é proteção contra adulteração intencional.
 
-Tipos: START=1, DATA=2, ACK=3, FINISH=4, DONE=5, FAILURE=6.
+Tipos: START=1, DATA=2, ACK=3, FINISH=4, DONE=5, FAILURE=6, REQUEST=7, RESPONSE=8. Os dois últimos foram adicionados na etapa 2; recompilar ambos os lados para usar o serviço.
 
 1. START, sequência 0: JSON `{size, sha256}`, janela oferecida. O receptor responde ACK 0 com o mínimo entre a janela oferecida e seu limite. Repetir START gera o mesmo ACK, sem recriar o arquivo.
 2. DATA: sequência começa em 1. O último payload pode ser menor. O receptor só aceita dados no intervalo permitido, armazena os fora de ordem e escreve a sequência contínua. ACK confirma uma sequência individual. Duplicatas anteriores à base recebem ACK novamente.
@@ -31,4 +31,12 @@ Estado do emissor: hash -> negociação -> envio com janela -> término -> concl
 
 Estado do receptor: espera -> negociação -> recepção -> validação/publicação -> espera de FINISH repetido -> concluído.
 
-Limitações: uma sessão por socket, janela fixa negociada, RTO fixo, sem autenticação/criptografia/congestionamento. A janela do ACK não representa espaço livre dinâmico; o buffer é limitado pela janela negociada.
+Limitações do transporte: uma sessão por socket, janela fixa negociada, RTO fixo, sem autenticação/criptografia/congestionamento embutidos. A janela do ACK não representa espaço livre dinâmico; o buffer é limitado pela janela negociada.
+
+## Camada de aplicação (etapa 2)
+
+REQUEST leva JSON com `operation`, `password`, `name` (transferências) e `offset` (listagem). O campo Session contém um ID aleatório do pedido. RESPONSE repete o ID e leva `error`, ou lista de arquivos e próxima página, ou objeto vazio autorizando transferência. Os dois tipos usam o CRC32 do formato RC2U.
+
+Cada pedido autentica por senha simples. O cliente retransmite REQUEST até receber RESPONSE ou atingir o limite. Durante uma transferência, o servidor repete a resposta de autorização se receber novamente o pedido original. O transporte então usa um novo ID de sessão e só aceita o endereço UDP autenticado. Todos os pacotes utilizam a mesma porta do serviço.
+
+O servidor aceita apenas uma operação por vez e mantém cache limitado de pedidos. Ao finalizar, marca o pedido como encerrado para impedir execução duplicada. Os dados e credenciais ainda não são criptografados. Detalhes e limitações em ETAPA2.md.

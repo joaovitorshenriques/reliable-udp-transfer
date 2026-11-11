@@ -4,9 +4,9 @@ Projeto acadêmico de Redes de Computadores II. Linguagem: **Go**, somente bibli
 
 ## Estado atual
 
-**Etapa 1: núcleo de transferência e CLI de teste.** Implementados: cabeçalho binário, CRC32 por datagrama, Selective Repeat, janela negociada, timeout fixo, limite de tentativas, reordenação, supressão de duplicatas, SHA-256 e confirmação de término com retransmissão. Arquivos são processados incrementalmente, sem carregar o arquivo inteiro na memória. O receptor aceita uma transferência por execução.
+**Etapas 1 e 2: transporte confiável e serviço cliente-servidor.** Implementados: cabeçalho binário, CRC32 por datagrama, Selective Repeat, janela negociada, timeout fixo, limite de tentativas, reordenação, supressão de duplicatas, SHA-256 e confirmação de término com retransmissão. Arquivos são processados incrementalmente, sem carregar o arquivo inteiro na memória.
 
-Ainda não implementados: aplicação cliente-servidor com senha, listagem, comandos remotos de upload/download, múltiplas sessões, seleção de servidor, cenários experimentais, dashboard e implantação em nuvem. Os comandos `send`/`receive` permitem transferir em qualquer direção, mas **não substituem esses requisitos de aplicação**.
+O serviço oferece senha, listagem paginada, upload e download usando uma única porta UDP, com uma operação por vez. Ainda não implementados: sessões simultâneas, RTO adaptativo, seleção de servidor, cenários experimentais, dashboard e implantação em nuvem. Os comandos `send`/`receive` continuam disponíveis para testar o transporte diretamente.
 
 ## Requisitos
 
@@ -26,7 +26,29 @@ go build -o bin/rc2.exe ./cmd/rc2
 
 **Instalação portátil no Windows:** se o Go estiver em `.tools/go`, substitua `go` por `.\scripts\go.ps1` nos comandos. O script utiliza caches locais; o compilador e os caches não são versionados.
 
-## Teste manual de transferência
+## Cliente-servidor
+
+Após compilar, siga o [roteiro de avaliação da etapa 2](docs/ETAPA2.md). Resumo dos comandos:
+
+```powershell
+# Terminal do servidor: escolha uma senha para a rede de teste.
+$env:RC2_PASSWORD = 'senha-de-teste'
+.\bin\rc2.exe serve -addr 127.0.0.1:9000 -dir data/server
+```
+
+```powershell
+# Outro terminal, na raiz do projeto:
+$env:RC2_PASSWORD = 'senha-de-teste'
+.\bin\rc2.exe list -addr 127.0.0.1:9000
+.\bin\rc2.exe upload -addr 127.0.0.1:9000 -file work/original.bin -name exemplo.bin
+# Aguarde 8 segundos após upload: o receptor ainda responde FINISH repetido.
+Start-Sleep -Seconds 8
+.\bin\rc2.exe download -addr 127.0.0.1:9000 -name exemplo.bin -file work/download.bin
+```
+
+A senha trafega em texto claro no pedido UDP; esta versão deve ser usada somente em loopback ou rede isolada. O servidor aceita nomes simples de até 120 caracteres ASCII (letras, números, espaço, ponto, hífen e sublinhado), sem subpastas, nomes ocultos ou links simbólicos. Arquivos existentes não são sobrescritos. Mantenha a pasta do servidor sob controle de usuários locais confiáveis.
+
+## Teste manual do transporte
 
 Execute os comandos na raiz do repositório. Os dois terminais devem permanecer nessa pasta.
 
@@ -101,6 +123,8 @@ Remove-Item Env:\RC2_LARGE_TEST
 - Dados duplicados, dados fora de ordem e um datagrama corrompido.
 - Esgotamento de tentativas quando não há resposta.
 - Preservação de arquivo existente, recusa de hash incorreto e limpeza do temporário.
+- Senha incorreta, listagem paginada e upload/download autenticados.
+- Perda da resposta inicial do serviço, nomes inválidos e arquivo inexistente.
 
 Os defeitos injetados pelos testes **não representam uma taxa de perda de 5%** e não servem como resultado experimental do relatório.
 
@@ -112,7 +136,7 @@ O JSON informa bytes úteis, duração, goodput em Mbit/s, envios de dados, retr
 
 Retransmissões **não são uma medição direta da taxa de perda**: também podem resultar de ACK perdido ou timeout prematuro. A etapa experimental registrará separadamente descarte injetado e estimativas do protocolo.
 
-Esta versão não tem autenticação nem criptografia e deve ser executada em loopback ou rede isolada de teste. CRC32 e SHA-256 não autenticam um remetente; o serviço UDP ainda não deve ser exposto à Internet. Não há controle de congestionamento, RTO adaptativo ou retomada; limite padrão de 1 GiB. O término definitivo depende de um período finito de espera: indisponibilidade prolongada ainda pode causar resultado incerto no emissor após o receptor salvar o arquivo.
+Os comandos do serviço exigem senha, mas ainda não há criptografia nem proteção contra captura e repetição maliciosa de credenciais. Os comandos diretos `send`/`receive` não autenticam. CRC32 e SHA-256 não autenticam um remetente; o serviço UDP ainda não deve ser exposto à Internet. Não há controle de congestionamento, RTO adaptativo ou retomada; limite padrão de 1 GiB. O término definitivo depende de um período finito de espera: indisponibilidade prolongada ainda pode causar resultado incerto no emissor após o receptor salvar o arquivo.
 
 A publicação no Windows usa `MoveFile`, que recusa um destino existente. Nos demais sistemas usa hard link e exige suporte do filesystem. O temporário é criado no mesmo diretório do destino. Não há substituição de arquivo preexistente; erro de publicação é reportado e o temporário é removido.
 
@@ -121,3 +145,4 @@ A publicação no Windows usa `MoveFile`, que recusa um destino existente. Nos d
 - [Plano de implementação e critérios de avaliação](docs/PLANO.md)
 - [Formato do protocolo](docs/PROTOCOLO.md)
 - [Registro de validação](docs/VALIDACAO.md)
+- [Avaliação do cliente-servidor](docs/ETAPA2.md)

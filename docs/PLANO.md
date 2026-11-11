@@ -5,7 +5,7 @@ Escopo: obrigatório completo, depois dashboard e nuvem. A escolha inicial é Go
 | Etapa | Entrega | Como avaliar | Situação |
 |---|---|---|---|
 | 1 | Transporte confiável e CLI | Testes com dados/ACKs perdidos, corrupção, duplicação e reordenação; arquivo de 80 MiB com hash igual | Implementada; consultar VALIDACAO.md |
-| 2 | Cliente-servidor | Senha correta aceita; senha incorreta rejeitada; listar arquivos; upload e download remotos; impedir caminhos fora da pasta; erros legíveis | Pendente |
+| 2 | Cliente-servidor | Senha correta aceita; senha incorreta rejeitada; listar arquivos; upload e download remotos; impedir caminhos fora da pasta; erros legíveis | Implementada em modo sequencial; avaliação manual em ETAPA2.md |
 | 3 | Robustez e observabilidade | Sessões isoladas, limite de recursos, RTO adaptativo, métricas em JSON/CSV; falhas não travam serviço | Pendente |
 | 4 | Experimentos | Repetições dos quatro cenários, arquivos >=80 MB, variação de janela, gráficos e capturas | Pendente |
 | 5 | Mini-CDN | Duas máquinas, sondagens repetidas, escolha pelo menor RTT, captura da seleção, comparação de desempenho | Pendente |
@@ -14,11 +14,11 @@ Escopo: obrigatório completo, depois dashboard e nuvem. A escolha inicial é Go
 
 ## Recomendações de arquitetura
 
-- Separar codec (`internal/protocol`), transporte (`internal/transfer`) e comandos (`cmd/rc2`). Próxima etapa: camada de aplicação e gerenciador de sessões.
+- Separar codec (`internal/protocol`), transporte (`internal/transfer`), aplicação (`internal/service`) e comandos (`cmd/rc2`). Próxima etapa: robustez e gerenciador de sessões.
 - Manter o núcleo de transporte compartilhado pelos dois sentidos. Não duplicar confiabilidade no upload e no download.
 - Usar estado explícito por sessão e uma rotina proprietária desse estado. Não criar uma goroutine por pacote.
 - Reservar evolução de cabeçalho por versão; o atual possui ID de sessão, mas ainda não possui multiplexação de fluxos.
-- O cliente deve solicitar operações ao servidor; a CLI atual é somente o instrumento para validar o transporte.
+- Os comandos `list`, `upload` e `download` solicitam operações ao servidor; `send` e `receive` permitem validar o transporte isoladamente.
 - Preparar a autenticação e os limites antes da nuvem. Não trocar a implementação própria por biblioteca QUIC pronta: isso esconderia os mecanismos avaliados.
 
 ## Experimentos obrigatórios
