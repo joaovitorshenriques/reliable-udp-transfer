@@ -1,0 +1,7 @@
+.tools/
+.cache/
+bin/
+work/
+data/
+results/
+*.part
