@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"time"
 
+	"trabalho_redes/internal/service"
 	"trabalho_redes/internal/transfer"
 )
 
@@ -21,15 +22,17 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("uso: rc2 send|receive [opções]; use -h para ajuda")
+		return fmt.Errorf("uso: rc2 serve|list|upload|download|send|receive [opções]")
 	}
 	mode := os.Args[1]
-	if mode != "send" && mode != "receive" {
+	if mode != "send" && mode != "receive" && mode != "serve" && mode != "list" && mode != "upload" && mode != "download" {
 		return fmt.Errorf("comando inválido: %s", mode)
 	}
 	fs := flag.NewFlagSet(mode, flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:9000", "destino (send) ou endereço local (receive)")
 	file := fs.String("file", "", "arquivo de entrada (send) ou saída nova (receive)")
+	root := fs.String("dir", "data/server", "pasta de arquivos do servidor")
+	name := fs.String("name", "", "nome remoto para upload/download")
 	cfg := transfer.DefaultConfig()
 	fs.IntVar(&cfg.Window, "window", cfg.Window, "janela em pacotes (1 a 4096)")
 	fs.DurationVar(&cfg.RTO, "rto", cfg.RTO, "timeout de retransmissão")
@@ -39,11 +42,56 @@ func run() error {
 	if e := fs.Parse(os.Args[2:]); e != nil {
 		return e
 	}
-	if *file == "" {
+	if *file == "" && mode != "serve" && mode != "list" {
 		return fmt.Errorf("informe -file")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	if mode == "serve" || mode == "list" || mode == "upload" || mode == "download" {
+		password := os.Getenv("RC2_PASSWORD")
+		if password == "" {
+			return fmt.Errorf("defina a variável de ambiente RC2_PASSWORD")
+		}
+		if mode == "serve" {
+			c, e := net.ListenPacket("udp", *addr)
+			if e != nil {
+				return e
+			}
+			defer c.Close()
+			fmt.Fprintln(os.Stderr, "Servidor UDP em", c.LocalAddr(), "- CTRL+C para encerrar")
+			return service.Serve(ctx, c, *root, password, cfg)
+		}
+		a, e := net.ResolveUDPAddr("udp", *addr)
+		if e != nil {
+			return e
+		}
+		bind := "0.0.0.0:0"
+		if a.IP.To4() == nil {
+			bind = "[::]:0"
+		}
+		c, e := net.ListenPacket("udp", bind)
+		if e != nil {
+			return e
+		}
+		defer c.Close()
+		if mode == "list" {
+			files, e := service.List(ctx, c, a, password, cfg)
+			if e != nil {
+				return e
+			}
+			return json.NewEncoder(os.Stdout).Encode(files)
+		}
+		if *name == "" {
+			return fmt.Errorf("informe -name com o nome remoto")
+		}
+		var s transfer.Stats
+		if mode == "upload" {
+			s, e = service.Upload(ctx, c, a, password, *file, *name, cfg)
+		} else {
+			s, e = service.Download(ctx, c, a, password, *name, *file, cfg)
+		}
+		return output(s, e)
+	}
 	var s transfer.Stats
 	var e error
 	if mode == "receive" {
@@ -70,6 +118,9 @@ func run() error {
 		defer c.Close()
 		s, e = transfer.Send(ctx, c, a, *file, cfg)
 	}
+	return output(s, e)
+}
+func output(s transfer.Stats, e error) error {
 	result := struct {
 		Success   bool           `json:"success"`
 		Error     string         `json:"error,omitempty"`

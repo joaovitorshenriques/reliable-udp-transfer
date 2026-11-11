@@ -16,6 +16,8 @@ const (
 	Finish      byte = 4
 	Done        byte = 5
 	Failure     byte = 6
+	Request     byte = 7
+	Response    byte = 8
 )
 
 type Packet struct {
@@ -27,7 +29,7 @@ type Packet struct {
 }
 
 func (p Packet) Marshal() ([]byte, error) {
-	if p.Kind < Start || p.Kind > Failure || len(p.Payload) > PayloadSize {
+	if p.Kind < Start || p.Kind > Response || len(p.Payload) > PayloadSize {
 		return nil, errors.New("invalid packet")
 	}
 	b := make([]byte, HeaderSize+len(p.Payload))
@@ -43,7 +45,7 @@ func (p Packet) Marshal() ([]byte, error) {
 }
 
 func Parse(b []byte) (Packet, error) {
-	if len(b) < HeaderSize || len(b) > HeaderSize+PayloadSize || string(b[:4]) != "RC2U" || b[4] != 1 || b[5] < Start || b[5] > Failure || b[6] != 0 || b[7] != 0 {
+	if len(b) < HeaderSize || len(b) > HeaderSize+PayloadSize || string(b[:4]) != "RC2U" || b[4] != 1 || b[5] < Start || b[5] > Response || b[6] != 0 || b[7] != 0 {
 		return Packet{}, errors.New("invalid header")
 	}
 	if int(binary.BigEndian.Uint16(b[22:24])) != len(b)-HeaderSize {

@@ -31,7 +31,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{Window: 64, RTO: 500 * time.Millisecond, Retries: 12, Idle: 15 * time.Second, MaxSize: 1 << 30}
 }
-func (c Config) validate() error {
+func (c Config) Validate() error {
 	if c.Window < 1 || c.Window > 4096 || c.RTO < time.Millisecond || c.RTO > 10*time.Second || c.Retries < 1 || c.Retries > 100 || c.Idle <= 0 || c.MaxSize < 0 || c.MaxSize > 1<<40 {
 		return errors.New("invalid transfer configuration")
 	}
@@ -135,7 +135,7 @@ type pending struct {
 }
 
 func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Config) (s Stats, err error) {
-	if err = cfg.validate(); err != nil {
+	if err = cfg.Validate(); err != nil {
 		return
 	}
 	f, e := os.Open(path)
@@ -250,7 +250,7 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 // Receive accepts one transfer. Output is committed only after hash validation.
 // Existing output is never overwritten; the caller chooses its local filename.
 func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s Stats, err error) {
-	if err = cfg.validate(); err != nil {
+	if err = cfg.Validate(); err != nil {
 		return
 	}
 	if _, e := os.Lstat(out); !os.IsNotExist(e) {
