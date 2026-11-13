@@ -1,5 +1,5 @@
 // Package service provides authenticated file operations over RC2 UDP packets.
-// This first service processes one operation at a time, on a single UDP port.
+// Transfers from different endpoints share one UDP listener.
 package service
 
 import (
@@ -39,6 +39,16 @@ type Response struct {
 type cached struct {
 	packet protocol.Packet
 	until  time.Time
+}
+
+type Report struct {
+	Success   bool           `json:"success"`
+	Error     string         `json:"error,omitempty"`
+	Timestamp string         `json:"timestamp"`
+	Endpoint  string         `json:"endpoint"`
+	Operation string         `json:"operation"`
+	Name      string         `json:"name,omitempty"`
+	Metrics   transfer.Stats `json:"metrics"`
 }
 
 // Flat filenames avoid platform-dependent traversal, Windows devices and ADS.
@@ -103,6 +113,8 @@ func (b *boundConn) ReadFrom(buf []byte) (int, net.Addr, error) {
 		if pe == nil && p.Kind == protocol.Request {
 			if p.Session == b.reply.Session {
 				_ = write(b.PacketConn, a, b.reply)
+			} else {
+				_ = write(b.PacketConn, a, packet(p.Session, Response{Error: "servidor ocupado; tente novamente"}))
 			}
 			continue
 		}
@@ -113,6 +125,11 @@ func (b *boundConn) ReadFrom(buf []byte) (int, net.Addr, error) {
 // Serve requires a dedicated directory not modified by untrusted local users.
 // Network callers cannot supply directories or follow existing symbolic links.
 func Serve(ctx context.Context, c net.PacketConn, root, password string, cfg transfer.Config) error {
+	return ServeWithReporter(ctx, c, root, password, cfg, nil)
+}
+
+// Reporter runs serially after each accepted transfer, including failed ones.
+func servePeer(ctx context.Context, c net.PacketConn, root, password string, cfg transfer.Config, report func(Report) error) error {
 	if password == "" {
 		return errors.New("defina RC2_PASSWORD com uma senha não vazia")
 	}
@@ -234,10 +251,20 @@ func Serve(ctx context.Context, c net.PacketConn, root, password string, cfg tra
 		}
 		conn := &boundConn{PacketConn: c, peer: a, reply: reply, ctx: ctx}
 		var opErr error
+		var stats transfer.Stats
 		if req.Operation == "upload" {
-			_, opErr = transfer.Receive(ctx, conn, path, cfg)
+			stats, opErr = transfer.Receive(ctx, conn, path, cfg)
 		} else {
-			_, opErr = transfer.Send(ctx, conn, a, path, cfg)
+			stats, opErr = transfer.Send(ctx, conn, a, path, cfg)
+		}
+		if report != nil {
+			r := Report{Success: opErr == nil, Timestamp: time.Now().UTC().Format(time.RFC3339), Endpoint: "server", Operation: req.Operation, Name: req.Name, Metrics: stats}
+			if opErr != nil {
+				r.Error = opErr.Error()
+			}
+			if e = report(r); e != nil {
+				return fmt.Errorf("record metrics: %w", e)
+			}
 		}
 		// Never reexecute a completed request: duplicate uploads must not overwrite.
 		msg := "solicitação já encerrada; use uma nova solicitação"
@@ -271,14 +298,21 @@ func call(ctx context.Context, c net.PacketConn, a net.Addr, req Request, cfg tr
 			return Response{}, e
 		}
 		until := time.Now().Add(cfg.RTO)
-		if e = c.SetReadDeadline(until); e != nil {
-			return Response{}, e
-		}
 		for time.Now().Before(until) {
+			if e = ctx.Err(); e != nil {
+				return Response{}, e
+			}
+			poll := time.Now().Add(100 * time.Millisecond)
+			if until.Before(poll) {
+				poll = until
+			}
+			if e = c.SetReadDeadline(poll); e != nil {
+				return Response{}, e
+			}
 			n, peer, re := c.ReadFrom(buf)
 			if re != nil {
 				if isTimeout(re) {
-					break
+					continue
 				}
 				return Response{}, re
 			}
