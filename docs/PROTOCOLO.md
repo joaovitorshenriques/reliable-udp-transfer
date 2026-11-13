@@ -31,7 +31,7 @@ Estado do emissor: hash -> negociação -> envio com janela -> término -> concl
 
 Estado do receptor: espera -> negociação -> recepção -> validação/publicação -> espera de FINISH repetido -> concluído.
 
-Limitações do transporte: uma sessão por socket, janela fixa negociada, RTO fixo, sem autenticação/criptografia/congestionamento embutidos. A janela do ACK não representa espaço livre dinâmico; o buffer é limitado pela janela negociada.
+Limitações do transporte: uma sessão por socket, janela fixa negociada, sem autenticação/criptografia/congestionamento embutidos. A janela do ACK não representa espaço livre dinâmico; o buffer é limitado pela janela negociada. A etapa 3 adiciona RTO adaptativo para DATA (em validação); controle e espera final continuam com RTO fixo. O formato dos pacotes não mudou.
 
 ## Camada de aplicação (etapa 2)
 

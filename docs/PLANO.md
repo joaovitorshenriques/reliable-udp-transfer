@@ -6,7 +6,7 @@ Escopo: obrigatório completo, depois dashboard e nuvem. A escolha inicial é Go
 |---|---|---|---|
 | 1 | Transporte confiável e CLI | Testes com dados/ACKs perdidos, corrupção, duplicação e reordenação; arquivo de 80 MiB com hash igual | Implementada; consultar VALIDACAO.md |
 | 2 | Cliente-servidor | Senha correta aceita; senha incorreta rejeitada; listar arquivos; upload e download remotos; impedir caminhos fora da pasta; erros legíveis | Implementada em modo sequencial; avaliação manual em ETAPA2.md |
-| 3 | Robustez e observabilidade | Sessões isoladas, limite de recursos, RTO adaptativo, métricas em JSON/CSV; falhas não travam serviço | Pendente |
+| 3 | Robustez e observabilidade | Sessões isoladas, limite de recursos, RTO adaptativo, métricas em JSON/CSV; falhas não travam serviço | Concluída em 12/11/2026: concorrência UDP, recuperação e suíte com 80 MiB aprovadas no Windows; compilação Linux verificada |
 | 4 | Experimentos | Repetições dos quatro cenários, arquivos >=80 MB, variação de janela, gráficos e capturas | Pendente |
 | 5 | Mini-CDN | Duas máquinas, sondagens repetidas, escolha pelo menor RTT, captura da seleção, comparação de desempenho | Pendente |
 | 6 | Dashboard web | RTT, throughput, perdas, retransmissões e janela vindos do processo real | Pendente |
