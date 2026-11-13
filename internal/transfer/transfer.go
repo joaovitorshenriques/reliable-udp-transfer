@@ -3,6 +3,7 @@
 package transfer
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -21,17 +22,23 @@ import (
 )
 
 type Config struct {
-	Window  int
-	RTO     time.Duration
-	Retries int
-	Idle    time.Duration
-	MaxSize int64
+	Adaptive bool
+	MinRTO   time.Duration
+	MaxRTO   time.Duration
+	Window   int
+	RTO      time.Duration
+	Retries  int
+	Idle     time.Duration
+	MaxSize  int64
 }
 
 func DefaultConfig() Config {
-	return Config{Window: 64, RTO: 500 * time.Millisecond, Retries: 12, Idle: 15 * time.Second, MaxSize: 1 << 30}
+	return Config{Adaptive: true, MinRTO: 50 * time.Millisecond, MaxRTO: 2 * time.Second, Window: 64, RTO: 500 * time.Millisecond, Retries: 12, Idle: 15 * time.Second, MaxSize: 1 << 30}
 }
 func (c Config) Validate() error {
+	if c.Adaptive && (c.MinRTO < time.Millisecond || c.MaxRTO < c.MinRTO || c.MaxRTO > 10*time.Second || c.Idle <= c.MaxRTO) {
+		return errors.New("invalid adaptive timeout bounds (idle must exceed max-rto)")
+	}
 	if c.Window < 1 || c.Window > 4096 || c.RTO < time.Millisecond || c.RTO > 10*time.Second || c.Retries < 1 || c.Retries > 100 || c.Idle <= 0 || c.MaxSize < 0 || c.MaxSize > 1<<40 {
 		return errors.New("invalid transfer configuration")
 	}
@@ -39,18 +46,29 @@ func (c Config) Validate() error {
 }
 
 type Stats struct {
-	Bytes           int64   `json:"bytes"`
-	Seconds         float64 `json:"seconds"`
-	GoodputMbps     float64 `json:"goodput_mbps"`
-	DataSent        int     `json:"data_datagrams_sent"`
-	Retransmissions int     `json:"data_retransmissions"`
-	ControlRetries  int     `json:"control_retries"`
-	Corrupt         int     `json:"corrupt_datagrams_received"`
-	Duplicates      int     `json:"duplicate_data_received"`
-	Window          int     `json:"window_packets"`
-	RTTMillis       float64 `json:"mean_data_rtt_ms"`
-	RTTCount        int     `json:"rtt_samples"`
-	SHA256          string  `json:"sha256"`
+	Role                   string  `json:"role"`
+	Session                string  `json:"session"`
+	Adaptive               bool    `json:"adaptive_rto"`
+	RTOMillis              float64 `json:"data_rto_ms"`
+	SRTTMillis             float64 `json:"srtt_ms"`
+	RTTVarMillis           float64 `json:"rtt_variation_ms"`
+	MaxPacketRTOMillis     float64 `json:"max_packet_rto_ms"`
+	DatagramsSent          int64   `json:"datagrams_sent"`
+	DatagramsReceived      int64   `json:"datagrams_received"`
+	TransportBytesSent     int64   `json:"transport_bytes_sent"`
+	TransportBytesReceived int64   `json:"transport_bytes_received"`
+	Bytes                  int64   `json:"bytes"`
+	Seconds                float64 `json:"seconds"`
+	GoodputMbps            float64 `json:"goodput_mbps"`
+	DataSent               int     `json:"data_datagrams_sent"`
+	Retransmissions        int     `json:"data_retransmissions"`
+	ControlRetries         int     `json:"control_retries"`
+	Corrupt                int     `json:"corrupt_datagrams_received"`
+	Duplicates             int     `json:"duplicate_data_received"`
+	Window                 int     `json:"window_packets"`
+	RTTMillis              float64 `json:"mean_data_rtt_ms"`
+	RTTCount               int     `json:"rtt_samples"`
+	SHA256                 string  `json:"sha256"`
 }
 
 func (s *Stats) complete(start time.Time) {
@@ -103,10 +121,13 @@ func exchange(ctx context.Context, c net.PacketConn, a net.Addr, p protocol.Pack
 		}
 		deadline := time.Now().Add(cfg.RTO)
 		for time.Now().Before(deadline) {
-			q, peer, e := read(c, deadline)
+			if e := ctx.Err(); e != nil {
+				return protocol.Packet{}, e
+			}
+			q, peer, e := read(c, minTime(deadline, time.Now().Add(100*time.Millisecond)))
 			if e != nil {
 				if timeout(e) {
-					break
+					continue
 				}
 				if peer != nil {
 					s.Corrupt++
@@ -129,6 +150,7 @@ func exchange(ctx context.Context, c net.PacketConn, a net.Addr, p protocol.Pack
 }
 
 type pending struct {
+	rto     time.Duration
 	p       protocol.Packet
 	sent    time.Time
 	retries int
@@ -138,6 +160,20 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 	if err = cfg.Validate(); err != nil {
 		return
 	}
+	meter := &meteredConn{PacketConn: c}
+	c = meter
+	defer meter.finish(&s)
+	s.Role = "sender"
+	s.Adaptive = cfg.Adaptive
+	estimator := rtoEstimator{current: cfg.RTO, minimum: cfg.MinRTO, maximum: cfg.MaxRTO}
+	if cfg.Adaptive {
+		estimator.current = min(cfg.MaxRTO, max(cfg.MinRTO, cfg.RTO))
+	}
+	defer func() {
+		s.RTOMillis = float64(estimator.current) / float64(time.Millisecond)
+		s.SRTTMillis = float64(estimator.srtt) / float64(time.Millisecond)
+		s.RTTVarMillis = float64(estimator.variation) / float64(time.Millisecond)
+	}()
 	f, e := os.Open(path)
 	if e != nil {
 		return s, e
@@ -161,6 +197,7 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 		return s, e
 	}
 	session := binary.BigEndian.Uint64(id[:])
+	s.Session = fmt.Sprintf("%016x", session)
 	meta, _ := json.Marshal(metadata{Size: s.Bytes, Hash: s.SHA256})
 	start := time.Now()
 	defer s.complete(start)
@@ -191,12 +228,13 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 				return s, e
 			}
 			s.DataSent++
-			inflight[next] = &pending{p: p, sent: time.Now()}
+			inflight[next] = &pending{p: p, sent: time.Now(), rto: estimator.current}
+			s.MaxPacketRTOMillis = max(s.MaxPacketRTOMillis, float64(estimator.current)/float64(time.Millisecond))
 			next++
 		}
-		deadline := time.Now().Add(cfg.RTO)
+		deadline := time.Now().Add(100 * time.Millisecond)
 		for _, v := range inflight {
-			if t := v.sent.Add(cfg.RTO); t.Before(deadline) {
+			if t := v.sent.Add(v.rto); t.Before(deadline) {
 				deadline = t
 			}
 		}
@@ -208,7 +246,11 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 			if q.Kind == protocol.Ack {
 				if v, ok := inflight[q.Seq]; ok {
 					if v.retries == 0 {
-						sample := float64(time.Since(v.sent)) / float64(time.Millisecond)
+						d := time.Since(v.sent)
+						if cfg.Adaptive {
+							estimator.sample(d)
+						}
+						sample := float64(d) / float64(time.Millisecond)
 						s.RTTCount++
 						s.RTTMillis += (sample - s.RTTMillis) / float64(s.RTTCount)
 					}
@@ -229,7 +271,7 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 			}
 		}
 		for _, v := range inflight {
-			if time.Since(v.sent) >= cfg.RTO {
+			if time.Since(v.sent) >= v.rto {
 				if v.retries >= cfg.Retries {
 					return s, fmt.Errorf("retry limit exceeded for sequence %d", v.p.Seq)
 				}
@@ -238,6 +280,10 @@ func Send(ctx context.Context, c net.PacketConn, a net.Addr, path string, cfg Co
 				}
 				v.sent = time.Now()
 				v.retries++
+				if cfg.Adaptive {
+					v.rto = estimator.backoff(v.rto)
+				}
+				s.MaxPacketRTOMillis = max(s.MaxPacketRTOMillis, float64(v.rto)/float64(time.Millisecond))
 				s.DataSent++
 				s.Retransmissions++
 			}
@@ -253,6 +299,10 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 	if err = cfg.Validate(); err != nil {
 		return
 	}
+	meter := &meteredConn{PacketConn: c}
+	c = meter
+	defer meter.finish(&s)
+	s.Role = "receiver"
 	if _, e := os.Lstat(out); !os.IsNotExist(e) {
 		return s, errors.New("output already exists or is inaccessible")
 	}
@@ -261,6 +311,7 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 	var session uint64
 	var m metadata
 	var f *os.File
+	var writer *bufio.Writer
 	var tmp string
 	defer func() {
 		if f != nil {
@@ -309,6 +360,7 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 				continue
 			}
 			peer, session = a, p.Session
+			s.Session = fmt.Sprintf("%016x", session)
 			window = min(window, int(p.Window))
 			s.Window = window
 			count = uint32((m.Size + protocol.PayloadSize - 1) / protocol.PayloadSize)
@@ -317,14 +369,15 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 				return fail("cannot create output")
 			}
 			tmp = f.Name()
+			writer = bufio.NewWriterSize(f, 256*1024)
 			start = time.Now()
+			last = start
 		}
 		if !same(peer, a) || p.Session != session {
 			continue
 		}
 		switch p.Kind {
 		case protocol.Start:
-			last = time.Now()
 			if e = emit(c, peer, protocol.Packet{Kind: protocol.Ack, Session: session, Window: uint16(window)}); e != nil {
 				return s, e
 			}
@@ -339,20 +392,20 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 			if p.Seq >= base+uint32(window) {
 				continue
 			}
-			last = time.Now()
 			if p.Seq < base {
 				s.Duplicates++
 			} else if _, ok := buffer[p.Seq]; ok {
 				s.Duplicates++
 			} else {
 				buffer[p.Seq] = p.Payload
+				last = time.Now()
 			}
 			for {
 				data, ok := buffer[base]
 				if !ok {
 					break
 				}
-				if _, e = f.Write(data); e != nil {
+				if _, e = writer.Write(data); e != nil {
 					return fail("output write failed")
 				}
 				h.Write(data)
@@ -370,6 +423,9 @@ func Receive(ctx context.Context, c net.PacketConn, out string, cfg Config) (s S
 			s.SHA256 = hex.EncodeToString(h.Sum(nil))
 			if s.SHA256 != m.Hash {
 				return fail("SHA-256 mismatch")
+			}
+			if e = writer.Flush(); e != nil {
+				return fail("output flush failed")
 			}
 			if e = f.Sync(); e != nil {
 				return fail("output sync failed")

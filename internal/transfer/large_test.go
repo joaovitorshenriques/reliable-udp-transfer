@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"trabalho_redes/internal/netio"
 )
 
 func TestLargeFile(t *testing.T) {
@@ -35,6 +36,19 @@ func TestLargeFile(t *testing.T) {
 		t.Fatal(e)
 	}
 	recv, send := socket(t), socket(t)
+	if os.Getenv("RC2_LARGE_BUFFERS") == "1" {
+		var e error
+		recv, e = netio.Listen("127.0.0.1:0", 4*1024*1024)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer recv.Close()
+		send, e = netio.Listen("127.0.0.1:0", 4*1024*1024)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer send.Close()
+	}
 	cfg := DefaultConfig()
 	cfg.Idle = 30 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

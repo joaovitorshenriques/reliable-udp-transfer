@@ -49,6 +49,7 @@ func setup(t *testing.T, drop bool) (context.Context, net.PacketConn, net.Addr, 
 		server = &loseReply{PacketConn: server}
 	}
 	cfg := transfer.DefaultConfig()
+	cfg.MaxRTO = 500 * time.Millisecond
 	cfg.RTO = 50 * time.Millisecond
 	cfg.Retries = 4
 	cfg.Idle = time.Second

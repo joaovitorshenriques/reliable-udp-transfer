@@ -77,7 +77,7 @@ func TestTransfers(t *testing.T) {
 		name         string
 		size, window int
 		faults       bool
-	}{{"empty", 0, 8, false}, {"partial", 37, 1, false}, {"window", 260123, 32, false}, {"loss_reorder_duplicate_corruption", 260123, 32, true}} {
+	}{{"empty", 0, 8, false}, {"partial", 37, 1, false}, {"window", 260123, 32, false}, {"loss_reorder_duplicate_corruption", 260123, 32, true}, {"fixed_timeout", 260123, 32, true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			in, out := filepath.Join(dir, "in.bin"), filepath.Join(dir, "out.bin")
@@ -94,6 +94,8 @@ func TestTransfers(t *testing.T) {
 				recv = &faulty{PacketConn: recv, seen: map[string]int{}, receiver: true}
 			}
 			cfg := DefaultConfig()
+			cfg.MaxRTO = 500 * time.Millisecond
+			cfg.Adaptive = tc.name != "fixed_timeout"
 			cfg.Window = tc.window
 			cfg.RTO = 25 * time.Millisecond
 			cfg.Retries = 10
@@ -120,6 +122,15 @@ func TestTransfers(t *testing.T) {
 			}
 			if ss.SHA256 != rr.s.SHA256 || ss.Bytes != int64(tc.size) {
 				t.Fatal("metrics/hash mismatch")
+			}
+			if ss.Session == "" || ss.Session != rr.s.Session || ss.Role != "sender" || rr.s.Role != "receiver" {
+				t.Fatal("missing endpoint identity")
+			}
+			if ss.DatagramsSent < int64(ss.DataSent) || ss.TransportBytesSent < int64(tc.size) || rr.s.DatagramsReceived == 0 {
+				t.Fatal("invalid traffic counters")
+			}
+			if tc.faults && ss.RTTCount >= (tc.size+protocol.PayloadSize-1)/protocol.PayloadSize {
+				t.Fatal("retransmitted packets sampled as RTT")
 			}
 			if tc.faults && (ss.Retransmissions == 0 || ss.ControlRetries == 0 || rr.s.Corrupt == 0 || rr.s.Duplicates == 0) {
 				t.Fatalf("faults not exercised: %+v %+v", ss, rr.s)
@@ -154,6 +165,7 @@ func TestBadHashNotPublished(t *testing.T) {
 	recv, send := socket(t), socket(t)
 	out := filepath.Join(t.TempDir(), "bad")
 	cfg := DefaultConfig()
+	cfg.Adaptive = false
 	cfg.RTO = 10 * time.Millisecond
 	cfg.Idle = time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
