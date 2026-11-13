@@ -8,8 +8,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"trabalho_redes/internal/netio"
 	"trabalho_redes/internal/service"
 	"trabalho_redes/internal/transfer"
 )
@@ -33,9 +36,15 @@ func run() error {
 	file := fs.String("file", "", "arquivo de entrada (send) ou saída nova (receive)")
 	root := fs.String("dir", "data/server", "pasta de arquivos do servidor")
 	name := fs.String("name", "", "nome remoto para upload/download")
+	metricsPath := fs.String("metrics", "", "arquivo JSONL de métricas (append)")
+	passwordFile := fs.String("password-file", "", "arquivo local UTF-8 com a senha; alternativa a RC2_PASSWORD")
+	socketBuffer := fs.Int("udp-buffer", 4*1024*1024, "buffer UDP solicitado em bytes; 0 mantém padrão do sistema")
 	cfg := transfer.DefaultConfig()
 	fs.IntVar(&cfg.Window, "window", cfg.Window, "janela em pacotes (1 a 4096)")
-	fs.DurationVar(&cfg.RTO, "rto", cfg.RTO, "timeout de retransmissão")
+	fs.DurationVar(&cfg.RTO, "rto", cfg.RTO, "RTO inicial dos dados e fixo das mensagens de controle")
+	fs.BoolVar(&cfg.Adaptive, "adaptive", cfg.Adaptive, "adaptar timeout dos dados ao RTT")
+	fs.DurationVar(&cfg.MinRTO, "min-rto", cfg.MinRTO, "piso do RTO adaptativo")
+	fs.DurationVar(&cfg.MaxRTO, "max-rto", cfg.MaxRTO, "teto do RTO adaptativo")
 	fs.IntVar(&cfg.Retries, "retries", cfg.Retries, "máximo de retransmissões por pacote")
 	fs.DurationVar(&cfg.Idle, "idle", cfg.Idle, "timeout de inatividade do receptor")
 	fs.Int64Var(&cfg.MaxSize, "max-size", cfg.MaxSize, "limite do arquivo em bytes")
@@ -45,21 +54,66 @@ func run() error {
 	if *file == "" && mode != "serve" && mode != "list" {
 		return fmt.Errorf("informe -file")
 	}
+	if e := cfg.Validate(); e != nil {
+		return e
+	}
+	var metricsFile *os.File
+	if *metricsPath != "" {
+		if e := os.MkdirAll(filepath.Dir(*metricsPath), 0700); e != nil {
+			return e
+		}
+		var e error
+		metricsFile, e = os.OpenFile(*metricsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if e != nil {
+			return e
+		}
+		defer metricsFile.Close()
+	}
+	record := func(r service.Report) error {
+		if metricsFile != nil {
+			if e := json.NewEncoder(metricsFile).Encode(r); e != nil {
+				return e
+			}
+			if e := metricsFile.Sync(); e != nil {
+				return e
+			}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(r)
+	}
+	finish := func(s transfer.Stats, e error) error {
+		r := service.Report{Success: e == nil, Timestamp: time.Now().UTC().Format(time.RFC3339), Endpoint: "client", Operation: mode, Name: *name, Metrics: s}
+		if e != nil {
+			r.Error = e.Error()
+		}
+		if re := record(r); re != nil {
+			return re
+		}
+		return e
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if mode == "serve" || mode == "list" || mode == "upload" || mode == "download" {
 		password := os.Getenv("RC2_PASSWORD")
+		if *passwordFile != "" {
+			data, err := os.ReadFile(*passwordFile)
+			if err != nil {
+				return err
+			}
+			password = strings.TrimRight(strings.TrimPrefix(string(data), "\ufeff"), "\r\n")
+		}
 		if password == "" {
 			return fmt.Errorf("defina a variável de ambiente RC2_PASSWORD")
 		}
 		if mode == "serve" {
-			c, e := net.ListenPacket("udp", *addr)
+			c, e := netio.Listen(*addr, *socketBuffer)
 			if e != nil {
 				return e
 			}
 			defer c.Close()
 			fmt.Fprintln(os.Stderr, "Servidor UDP em", c.LocalAddr(), "- CTRL+C para encerrar")
-			return service.Serve(ctx, c, *root, password, cfg)
+			return service.ServeWithReporter(ctx, c, *root, password, cfg, record)
 		}
 		a, e := net.ResolveUDPAddr("udp", *addr)
 		if e != nil {
@@ -69,7 +123,7 @@ func run() error {
 		if a.IP.To4() == nil {
 			bind = "[::]:0"
 		}
-		c, e := net.ListenPacket("udp", bind)
+		c, e := netio.Listen(bind, *socketBuffer)
 		if e != nil {
 			return e
 		}
@@ -90,12 +144,12 @@ func run() error {
 		} else {
 			s, e = service.Download(ctx, c, a, password, *name, *file, cfg)
 		}
-		return output(s, e)
+		return finish(s, e)
 	}
 	var s transfer.Stats
 	var e error
 	if mode == "receive" {
-		c, err := net.ListenPacket("udp", *addr)
+		c, err := netio.Listen(*addr, *socketBuffer)
 		if err != nil {
 			return err
 		}
@@ -111,29 +165,12 @@ func run() error {
 		if a.IP.To4() == nil {
 			bind = "[::]:0"
 		}
-		c, err := net.ListenPacket("udp", bind)
+		c, err := netio.Listen(bind, *socketBuffer)
 		if err != nil {
 			return err
 		}
 		defer c.Close()
 		s, e = transfer.Send(ctx, c, a, *file, cfg)
 	}
-	return output(s, e)
-}
-func output(s transfer.Stats, e error) error {
-	result := struct {
-		Success   bool           `json:"success"`
-		Error     string         `json:"error,omitempty"`
-		Timestamp string         `json:"timestamp"`
-		Metrics   transfer.Stats `json:"metrics"`
-	}{Success: e == nil, Timestamp: time.Now().UTC().Format(time.RFC3339), Metrics: s}
-	if e != nil {
-		result.Error = e.Error()
-	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(result); err != nil {
-		return err
-	}
-	return e
+	return finish(s, e)
 }
