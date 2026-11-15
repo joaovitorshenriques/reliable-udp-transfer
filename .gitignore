@@ -6,3 +6,4 @@ data/
 results/
 *.part
 password.txt
+__pycache__/
