@@ -10,12 +10,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
+	"trabalho_redes/internal/netem"
 
 	"trabalho_redes/internal/netio"
 	"trabalho_redes/internal/service"
@@ -26,9 +28,13 @@ type group struct {
 	Name     string
 	Adaptive bool
 	Buffer   int
+	RTT      time.Duration
+	Loss     float64
+	Window   int
+	Seed     int64
 }
 
-var groups = []group{{"A", false, 0}, {"B", false, 4 * 1024 * 1024}, {"C", true, 4 * 1024 * 1024}}
+var groups = []group{{Name: "A"}, {Name: "B", Buffer: 4 * 1024 * 1024}, {Name: "C", Adaptive: true, Buffer: 4 * 1024 * 1024}}
 
 type record struct {
 	Group              string `json:"group"`
@@ -41,7 +47,21 @@ func main() {
 	repeats := flag.Int("repeats", 5, "repetitions per group")
 	mib := flag.Int("mib", 80, "file size in MiB (smaller sizes are smoke tests only)")
 	output := flag.String("out", "results", "parent directory for a new unique run")
+	stage4 := flag.Bool("stage4", false, "run the four RTT/loss scenarios instead of stage 3 A/B/C")
+	window := flag.Int("window", 64, "stage 4 window in packets")
+	scenario := flag.Int("scenario", 0, "stage 4 scenario 1..4, or 0 for all")
+	seed := flag.Int64("seed", 2026, "stage 4 base loss seed")
 	flag.Parse()
+	if *stage4 {
+		if *window < 1 || *window > 4096 || *scenario < 0 || *scenario > 4 {
+			fmt.Fprintln(os.Stderr, "invalid window/scenario")
+			os.Exit(1)
+		}
+		groups = scenarios(*window, *seed)
+		if *scenario > 0 {
+			groups = groups[*scenario-1 : *scenario]
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	if err := run(ctx, *output, *repeats, *mib); err != nil {
@@ -57,7 +77,11 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		return err
 	}
-	dir, err := os.MkdirTemp(parent, "etapa3-")
+	prefix := "etapa3-"
+	if groups[0].RTT > 0 {
+		prefix = "etapa4-"
+	}
+	dir, err := os.MkdirTemp(parent, prefix)
 	if err != nil {
 		return err
 	}
@@ -85,7 +109,7 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 		Groups              []group
 		Config              transfer.Config
 		Scope               string
-	}{time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, runtime.Version(), repeats, mib, hash, groups, transfer.DefaultConfig(), "loopback; client/server goroutines in one process; no injected loss; group order rotated by repetition; durations in Config are nanoseconds"}
+	}{time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, runtime.Version(), repeats, mib, hash, groups, transfer.DefaultConfig(), "loopback; client/server in one process; rotated group order; Config durations in ns; stage4 overrides window and adds RTT/2 per direction, Bernoulli loss for ALL datagrams including ACK/control; queues 8192 each; client seed=group seed+1000*repetition, server seed=client seed+1; pair timeout 2h; generated seeds reproduce decisions only for the same packet order"}
 	b, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
@@ -103,8 +127,13 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 		return err
 	}
 	defer csvFile.Close()
+	emulationFile, err := os.Create(filepath.Join(dir, "emulation.jsonl"))
+	if err != nil {
+		return err
+	}
+	defer emulationFile.Close()
 	cw := csv.NewWriter(csvFile)
-	if err = cw.Write([]string{"group", "repetition", "requested_udp_buffer", "operation", "endpoint", "role", "session", "success", "error", "bytes", "seconds", "goodput_mbps", "data_retransmissions", "mean_data_rtt_ms", "sha256"}); err != nil {
+	if err = cw.Write([]string{"group", "repetition", "requested_udp_buffer", "operation", "endpoint", "role", "session", "success", "error", "bytes", "seconds", "goodput_mbps", "data_retransmissions", "mean_data_rtt_ms", "sha256", "sender_rc2_mbps"}); err != nil {
 		return err
 	}
 	save := func(g group, rep int, r service.Report) error {
@@ -113,7 +142,11 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 		}
 		s := r.Metrics
 		f := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
-		if err := cw.Write([]string{g.Name, strconv.Itoa(rep), strconv.Itoa(g.Buffer), r.Operation, r.Endpoint, s.Role, s.Session, strconv.FormatBool(r.Success), r.Error, strconv.FormatInt(s.Bytes, 10), f(s.Seconds), f(s.GoodputMbps), strconv.Itoa(s.Retransmissions), f(s.RTTMillis), s.SHA256}); err != nil {
+		throughput := ""
+		if r.Success && s.Role == "sender" && s.Seconds > 0 {
+			throughput = f(float64(s.TransportBytesSent) * 8 / s.Seconds / 1e6)
+		}
+		if err := cw.Write([]string{g.Name, strconv.Itoa(rep), strconv.Itoa(g.Buffer), r.Operation, r.Endpoint, s.Role, s.Session, strconv.FormatBool(r.Success), r.Error, strconv.FormatInt(s.Bytes, 10), f(s.Seconds), f(s.GoodputMbps), strconv.Itoa(s.Retransmissions), f(s.RTTMillis), s.SHA256, throughput}); err != nil {
 			return err
 		}
 		cw.Flush()
@@ -128,8 +161,15 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 	for rep := 1; rep <= repeats; rep++ {
 		for offset := range groups {
 			g := groups[(rep-1+offset)%len(groups)]
+			g.Seed += int64(rep) * 1000
 			fmt.Printf("Grupo %s, repetição %d/%d: upload + download de %d MiB\n", g.Name, rep, repeats, mib)
-			if err := pair(ctx, work, source, hash, g, func(r service.Report) error { return save(g, rep, r) }); err != nil {
+			if err := pairWithEmulation(ctx, work, source, hash, g, func(r service.Report) error { return save(g, rep, r) }, func(e emulationRecord) error {
+				e.Repetition = rep
+				if err := json.NewEncoder(emulationFile).Encode(e); err != nil {
+					return err
+				}
+				return emulationFile.Sync()
+			}); err != nil {
 				return fmt.Errorf("group %s repetition %d: %w (partial results: %s)", g.Name, rep, err, abs)
 			}
 		}
@@ -142,7 +182,10 @@ func run(ctx context.Context, parent string, repeats, mib int) error {
 }
 
 func pair(parent context.Context, work, source, expected string, g group, save func(service.Report) error) error {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
+	return pairWithEmulation(parent, work, source, expected, g, save, nil)
+}
+func pairWithEmulation(parent context.Context, work, source, expected string, g group, save func(service.Report) error, saveEmulation func(emulationRecord) error) (resultErr error) {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Hour)
 	defer cancel()
 	root, err := os.MkdirTemp(work, "pair-")
 	if err != nil {
@@ -163,13 +206,42 @@ func pair(parent context.Context, work, source, expected string, g group, save f
 		return err
 	}
 	defer client.Close()
+	var clientConn, serverConn net.PacketConn = client, server
+	if g.RTT > 0 {
+		ec, err := netem.Wrap(client, netem.Config{Delay: g.RTT / 2, Loss: g.Loss, Seed: g.Seed, Queue: 8192})
+		if err != nil {
+			return err
+		}
+		es, err := netem.Wrap(server, netem.Config{Delay: g.RTT / 2, Loss: g.Loss, Seed: g.Seed + 1, Queue: 8192})
+		if err != nil {
+			ec.Close()
+			return err
+		}
+		clientConn, serverConn = ec, es
+		defer func() {
+			ec.Close()
+			es.Close()
+			e := emulationRecord{Group: g.Name, RTTMillis: float64(g.RTT) / float64(time.Millisecond), Loss: g.Loss, Seed: g.Seed, Window: g.Window, ClientToServer: ec.Snapshot(), ServerToClient: es.Snapshot()}
+			if saveEmulation != nil {
+				if err := saveEmulation(e); err != nil && resultErr == nil {
+					resultErr = err
+				}
+			}
+			if resultErr == nil && (e.ClientToServer.QueueDrops+e.ServerToClient.QueueDrops+e.ClientToServer.SendErrors+e.ServerToClient.SendErrors) > 0 {
+				resultErr = fmt.Errorf("uncontrolled queue drops/send errors; inspect emulation.jsonl")
+			}
+		}()
+	}
 	cfg := transfer.DefaultConfig()
 	cfg.Adaptive = g.Adaptive
+	if g.Window > 0 {
+		cfg.Window = g.Window
+	}
 	reports := make(chan service.Report, 2)
 	done := make(chan struct{})
 	var serverErr error
 	go func() {
-		serverErr = service.ServeWithReporter(ctx, server, serverRoot, "local-experiment", cfg, func(r service.Report) error { reports <- r; return nil })
+		serverErr = service.ServeWithReporter(ctx, serverConn, serverRoot, "local-experiment", cfg, func(r service.Report) error { reports <- r; return nil })
 		close(done)
 	}()
 	// Wait for the worker before removing its files, also on an early failure.
@@ -180,9 +252,9 @@ func pair(parent context.Context, work, source, expected string, g group, save f
 		dest := filepath.Join(root, "download.bin")
 		if op == "upload" {
 			dest = filepath.Join(serverRoot, "remote.bin")
-			s, opErr = service.Upload(ctx, client, server.LocalAddr(), "local-experiment", source, "remote.bin", cfg)
+			s, opErr = service.Upload(ctx, clientConn, server.LocalAddr(), "local-experiment", source, "remote.bin", cfg)
 		} else {
-			s, opErr = service.Download(ctx, client, server.LocalAddr(), "local-experiment", "remote.bin", dest, cfg)
+			s, opErr = service.Download(ctx, clientConn, server.LocalAddr(), "local-experiment", "remote.bin", dest, cfg)
 		}
 		r := service.Report{Success: opErr == nil, Timestamp: time.Now().UTC().Format(time.RFC3339), Endpoint: "client", Operation: op, Name: "remote.bin", Metrics: s}
 		if opErr != nil {

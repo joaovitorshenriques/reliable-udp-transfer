@@ -13,7 +13,13 @@ import (
 func main() {
 	large := flag.Bool("large", false, "include the 80 MiB loopback transfer")
 	cross := flag.Bool("cross", false, "also compile for the other OS (does not execute its tests)")
+	stage4 := flag.Bool("stage4", false, "include 1 MiB integration tests for all four RTT/loss scenarios")
 	flag.Parse()
+	if *stage4 {
+		os.Setenv("RC2_STAGE4_TEST", "1")
+	} else {
+		os.Setenv("RC2_STAGE4_TEST", "0")
+	}
 	if err := run(*large, *cross); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -48,8 +54,12 @@ func run(large, cross bool) error {
 		}
 		return nil
 	}
+	timeout := "-timeout=5m"
+	if os.Getenv("RC2_STAGE4_TEST") == "1" {
+		timeout = "-timeout=15m"
+	}
 	for _, args := range [][]string{
-		{"test", "./...", "-count=1", "-v", "-timeout=5m"},
+		{"test", "./...", "-count=1", "-v", timeout},
 		{"vet", "./..."},
 		{"build", "-o", out + string(os.PathSeparator), "./cmd/..."},
 	} {
