@@ -1,4 +1,59 @@
+# Encerramento da etapa 4 — 14/11/2026
+
+Evidência: saída completa fornecida pelo usuário de `go run ./cmd/validate -large -stage4 -cross`. Todos os testes habilitados passaram, assim como `go vet ./...`, build dos comandos Windows e compilação Linux. Não houve execução de testes no Linux.
+
+- TestStage4UDP: quatro cenários aprovados, upload/download de 1 MiB com hash correto; total 97,19 s.
+- TestLargeFile: 83.886.080 bytes, SHA-256 `42d12a7bb4fe5161f36dd20908f31ea01e2ae86741f32adc970dc527f22ad4f4`, 1,955 s de transferência, goodput 343,200 Mbit/s, zero retransmissões.
+- Concorrência, interrupção/recuperação, autenticação, integridade, buffers e RTO aprovados. Logs de cancelamento/timeout pertencem aos testes que provocam essas condições; o log de socket fechado em TestUploadDownload ocorreu com teste aprovado e permanece uma limitação de limpeza/log já registrada, não uma falha da suíte.
+- Campanhas: janelas 16/64/256, cinco repetições, quatro cenários, 120 transferências de 80 MiB verificadas. Comparação e IC95% disponíveis em comparacao-etapa4/comparison.md.
+- Captura S3: 3.773 pacotes com CRC válido, 143 DATA repetidos observáveis e zero descartes informados pelo capturador.
+
+Etapa 4 concluída no escopo de emulação local documentado. Mini-CDN entre máquinas pertence à etapa 5. Esta atualização é documental; nenhum commit ou push foi realizado.
+
+## Histórico de verificações anteriores
+
+## Consolidação experimental — 14/11/2026
+
+Campanhas de 80 MiB com janelas 16, 64 e 256 concluídas e verificadas: 120 transferências, 240 registros de métricas e 60 pares do emulador. Hashes/tamanhos e CSV/JSONL conferidos; zero descartes por fila e erros de envio. Comparação, IC95% e gráficos gerados em [comparacao-etapa4/comparison.md](comparacao-etapa4/comparison.md). Captura S3 e decodificação documentadas em CAPTURA-S3.md e capture-s3/capture.md.
+
+A janela 256 apresentou o maior goodput médio nos quatro cenários e nos dois sentidos. Em upload, o ganho 256/16 foi aproximadamente 15,72 vezes em S1, 15,81 em S2, 7,00 em S3 e 7,14 em S4. Com perdas, o ganho foi menor que a razão entre as janelas (16). Isso é compatível com custos de recuperação e bloqueio da base da janela; não isola causalmente cada custo. Há retransmissões mesmo sem perda injetada: não atribuí-las automaticamente a perda física. Os resultados são de loopback com emulação, não de enlace real entre máquinas.
+
+As campanhas ocorreram sequencialmente e os manifestos não registram hardware/commit; igualdade desses fatores depende do controle da execução pelo operador. Não foi realizado teste de significância entre janelas. A validação completa combinada `go run ./cmd/validate -large -stage4 -cross` foi aprovada no Windows em 14/11/2026, com build Linux aprovado (sem execução Linux). Não repetir campanhas longas já aprovadas.
+
+## Ferramentas de fechamento da etapa 4
+
+Decodificador Lua carregado com sucesso pelo TShark 4.6.9 na captura existente; campos rc2.seq/rc2.kind reconhecidos. Inspeção Python validou CRC, versão e tamanho dos 3.773 pacotes e identificou 143 DATA repetidos. Scripts Python passaram na compilação sintática. Comparador rejeitou corretamente três entradas da mesma janela (64), sem gerar comparação inválida. O caminho completo de comparação aguarda as campanhas reais das janelas 16 e 256. Não houve repetição da campanha longa nem nova captura nesta verificação.
+
 # Registro de validação — 10/11/2026
+
+## Etapa 4 — campanha de 80 MiB/janela 64 (13/11/2026)
+
+Analisados os arquivos de `results/etapa4-1490099931`: COMPLETE presente, 80 registros de transporte, 40 sessões pareadas e 20 registros de emulação. Todos os hashes/tamanhos/sucessos corretos; configurações e sementes conferidas com o manifesto; CSV/JSONL consistentes. Zero descartes por fila cheia, erros de envio ou pendentes/cancelados. Cinco repetições por cenário, upload e download.
+
+Resumo e IC95% t de Student em [results-etapa4-w64/analysis.md](results-etapa4-w64/analysis.md), tabela numérica em `results-etapa4-w64/summary.csv`. Médias de goodput do emissor (upload/download): S1 23,3184/23,2777; S2 5,9464/5,9463; S3 2,2430/2,2097; S4 0,5721/0,5684 Mbit/s. RTT médio próximo de 25,7/100,7/100,8/400,8 ms. Em S3/S4, perdas observadas por sentido entre 4,9849% e 5,0370%.
+
+S2 apresentou 918 retransmissões no upload e 3162 no download (totais das cinco repetições), apesar de nenhuma perda sorteada. A causa não foi comprovada: requer captura/análise de temporização; não inferir perda física a partir desse contador. S1 não apresentou retransmissões. O resumo usa o emissor em ambas as operações; os números de download do terminal eram do receptor.
+
+Análise reproduzível com Python e biblioteca padrão, sem instalar dependências: `python scripts/analyze-stage4.py results/etapa4-1490099931 --out docs/results-etapa4-w64`. Os hashes dos arquivos de entrada estão no relatório. Após autorização, Matplotlib 3.11.2 foi instalado em `.tools/python-packages` e validado por importação e geração dos quatro gráficos PNG/PDF via `scripts/plot-stage4.py`. O instalador oficial Wireshark 4.6.9 foi baixado: SHA-256 `bf9b5ce8a89f244c376a9b1a946276eaa06463dde3e33069a34d7f102f5878cf` igual ao appcast oficial e assinatura Authenticode válida da Wireshark Foundation. A abertura falhou com "Realocação Inválida da DLL do Sistema"; Wireshark/Npcap permanecem pendentes. Não foram feitas capturas nem commits.
+
+## Etapa 4 — integração UDP aprovada (13/11/2026)
+
+Evidência: saída completa fornecida pelo usuário para `go run ./cmd/validate -stage4 -cross`. Todos os testes habilitados passaram, assim como vet e builds Windows/Linux. `TestStage4UDP` completou upload/download de 1 MiB nos quatro cenários em 104,54 s, com hashes corretos, relatórios pareados e verificações do emulador aprovadas. TestLargeFile foi ignorado intencionalmente porque `-large` não foi solicitado.
+
+| Cenário | Upload: duração cliente emissor (s) | Download: duração cliente receptor (s) |
+|---|---:|---:|
+| S1 | 0,421 | 0,402 |
+| S2 | 1,626 | 1,526 |
+| S3 | 4,994 | 5,378 |
+| S4 | 15,206 | 17,796 |
+
+Estas são amostras únicas de testes de integração, com limites de medição distintos entre emissor/receptor. Não são resultados finais nem justificam conclusões estatísticas. Próximo passo: campanha de cinco repetições por cenário, 80 MiB e janela 64, preservando dados brutos. Variação de janela, análise, gráficos e capturas permanecem pendentes. Não foi feito commit da etapa 4.
+
+## Etapa 4 — implementação inicial (13/11/2026)
+
+Criado emulador de datagramas com atraso agendado, perda Bernoulli por sentido e semente, filas limitadas e contadores distintos de descarte sorteado/fila/erro de envio. Passaram testes sem sockets de atraso mínimo, encaminhamento de rajada sem serializar o atraso, limites de perda 0/100%, repetibilidade do sorteio, contabilidade de fila e fechamento. Os cenários S1–S4 e geração de arquivos também passaram nos testes unitários. `go vet ./...` e builds Windows/Linux passaram.
+
+O teste UDP de integração `TestStage4UDP` é opt-in e não foi executado nesta validação automatizada. Próximo comando no terminal local: `go run ./cmd/validate -stage4 -cross`. Arquivos de 1 MiB são apenas testes de integração. Ainda não há campanha de 80 MiB, gráficos ou capturas da etapa 4. Nenhum resultado anterior aprova automaticamente o novo emulador.
 
 ## Etapa 3 concluída — 12/11/2026
 

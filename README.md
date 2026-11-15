@@ -60,6 +60,16 @@ go run ./cmd/experiment
 
 Executa cinco repetições de upload/download de 80 MiB para cada grupo: A (RTO fixo/buffers padrão), B (fixo/4 MiB) e C (adaptativo/4 MiB). Grava manifesto, métricas JSONL/CSV e marcador `COMPLETE` em uma pasta nova de `results/`. É loopback com cliente e servidor no mesmo processo, sem perda injetada. Não substitui os quatro cenários obrigatórios nem a mini-CDN em máquinas diferentes. Veja [ETAPA3.md](docs/ETAPA3.md).
 
+## Etapa 4: RTT e perda controlados
+
+A implementação inicial mantém os mesmos comandos nos dois sistemas:
+
+```text
+go run ./cmd/validate -stage4 -cross
+```
+
+Esse comando valida os quatro cenários com arquivos de 1 MiB. Após aprovação, a campanha obrigatória usa `go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 64`. Pode levar horas. Parâmetros, interpretação das taxas e pendências estão em [ETAPA4.md](docs/ETAPA4.md). A campanha com janela 64 foi concluída e analisada; variação de janela, capturas e gráficos foram concluídos. Veja [resultados da janela 64](docs/results-etapa4-w64/analysis.md).
+
 ## Compilar para distribuição
 
 ```text
@@ -86,4 +96,8 @@ Não há controle de congestionamento ou retomada de arquivos. A publicação no
 - [Histórico da etapa 2](docs/ETAPA2.md)
 - [Etapa 3 e campanha](docs/ETAPA3.md)
 
-Experimentos controlados, mini-CDN, dashboard e nuvem são as próximas entregas. Não interpretar resultados históricos como aprovação de alterações posteriores.
+Experimentos controlados concluídos. Mini-CDN, dashboard e nuvem são as próximas entregas. Não interpretar resultados históricos como aprovação de alterações posteriores.
+
+Roteiro de fechamento: [verificação da etapa 4](docs/VERIFICAR-ETAPA4.md). Inclui reprodução das campanhas, comparação automática e inspeção da captura com decodificador RC2.
+
+Campanhas das três janelas concluídas: [comparação final](docs/comparacao-etapa4/comparison.md). Validação completa combinada aprovada; não é necessário repetir as campanhas.
