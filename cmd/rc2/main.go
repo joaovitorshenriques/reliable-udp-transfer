@@ -28,6 +28,9 @@ func run() error {
 		return fmt.Errorf("uso: rc2 serve|list|upload|download|send|receive [opções]")
 	}
 	mode := os.Args[1]
+	if mode == "cdn" {
+		return runCDN(os.Args[2:])
+	}
 	if mode != "send" && mode != "receive" && mode != "serve" && mode != "list" && mode != "upload" && mode != "download" {
 		return fmt.Errorf("comando inválido: %s", mode)
 	}
