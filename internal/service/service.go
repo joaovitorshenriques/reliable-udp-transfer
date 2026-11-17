@@ -198,6 +198,8 @@ func servePeer(ctx context.Context, c net.PacketConn, root, password string, cfg
 		response := Response{}
 		path := ""
 		switch req.Operation {
+		case "probe":
+			// Authenticated, constant-size response; no filesystem listing.
 		case "list":
 			entries, err := os.ReadDir(root)
 			if err != nil {
@@ -246,7 +248,7 @@ func servePeer(ctx context.Context, c net.PacketConn, root, password string, cfg
 		if e = write(c, a, reply); e != nil {
 			return e
 		}
-		if response.Error != "" || req.Operation == "list" {
+		if response.Error != "" || req.Operation == "list" || req.Operation == "probe" {
 			continue
 		}
 		conn := &boundConn{PacketConn: c, peer: a, reply: reply, ctx: ctx}
@@ -280,6 +282,11 @@ func call(ctx context.Context, c net.PacketConn, a net.Addr, req Request, cfg tr
 	if e := cfg.Validate(); e != nil {
 		return Response{}, e
 	}
+	return callAttempts(ctx, c, a, req, cfg.RTO, cfg.Retries)
+}
+
+// callAttempts permits a single non-retried probe without changing transfer validation.
+func callAttempts(ctx context.Context, c net.PacketConn, a net.Addr, req Request, timeout time.Duration, retries int) (Response, error) {
 	var id [8]byte
 	if _, e := rand.Read(id[:]); e != nil {
 		return Response{}, e
@@ -290,14 +297,14 @@ func call(ctx context.Context, c net.PacketConn, a net.Addr, req Request, cfg tr
 	}
 	p := protocol.Packet{Kind: protocol.Request, Session: binary.BigEndian.Uint64(id[:]), Payload: payload}
 	buf := make([]byte, 1201)
-	for attempt := 0; attempt <= cfg.Retries; attempt++ {
+	for attempt := 0; attempt <= retries; attempt++ {
 		if e = ctx.Err(); e != nil {
 			return Response{}, e
 		}
 		if e = write(c, a, p); e != nil {
 			return Response{}, e
 		}
-		until := time.Now().Add(cfg.RTO)
+		until := time.Now().Add(timeout)
 		for time.Now().Before(until) {
 			if e = ctx.Err(); e != nil {
 				return Response{}, e
