@@ -101,3 +101,5 @@ Experimentos controlados concluídos. Mini-CDN, dashboard e nuvem são as próxi
 Roteiro de fechamento: [verificação da etapa 4](docs/VERIFICAR-ETAPA4.md). Inclui reprodução das campanhas, comparação automática e inspeção da captura com decodificador RC2.
 
 Campanhas das três janelas concluídas: [comparação final](docs/comparacao-etapa4/comparison.md). Validação completa combinada aprovada; não é necessário repetir as campanhas.
+
+Mini-CDN validada na LAN: [etapa 5](docs/ETAPA5.md) e [resultados](docs/results-etapa5/analysis.md). Cliente local e retomada da campanha estão documentados.

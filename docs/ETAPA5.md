@@ -1,3 +1,9 @@
+# Etapa 5 concluída no escopo LAN
+
+Desktop 192.168.2.128 (cabo, cliente e réplica) e notebook 192.168.2.150 (Wi-Fi). Foram verificadas 15 transferências de 80 MiB com relatórios pareados e hashes iguais. Cinco seleções escolheram corretamente o desktop. O PCAP confirma 50 sondagens respondidas e START, primeiro DATA e DONE das 15 sessões. CRC validado nos frames exportados, não em todos os pacotes da captura.
+
+Resultados: [análise](results-etapa5/analysis.md) e [evidências da captura](results-etapa5/capture.md). Limitações: cliente local favorece o desktop; rodada 5 retomada após limite de endpoints; não foi uma campanha contínua nem comparação entre dois caminhos remotos. Suíte Windows, vet e build Linux aprovados antes da campanha. Não é necessário repetir as transferências.
+
 # Etapa 5 — mini-CDN (implementação inicial)
 
 O comando `rc2 cdn` consulta de duas a oito réplicas, alterna a ordem a cada rodada e escolhe o menor RTT mediano entre servidores com maioria de respostas válidas. Padrão: cinco sondagens autenticadas, sem retransmissão, timeout de um segundo. Falhas são registradas e não viram amostras de RTT zero. Empates preservam a ordem de entrada. O RTT inclui processamento da aplicação. Cada sondagem usa sessão aleatória; respostas precisam ter origem e sessão corretas e CRC válido.
@@ -44,8 +50,8 @@ Teste também um servidor indisponível, senha incorreta em ambos e destino exis
 3. Fazer cinco repetições de seleção+download e cinco downloads diretos de cada réplica, alternando a ordem. Usar nomes locais/relatórios novos em cada repetição. Comparar RTT das sondagens, goodput, retransmissões e integridade. Menor RTT não garante maior goodput.
 4. Conferir que o endereço selecionado corresponde à menor mediana elegível em cada JSON e que o tráfego DATA vem desse servidor.
 
-As campanhas entre máquinas, captura da seleção e comparação de desempenho ainda estão pendentes. Etapa 5 não está declarada concluída.
+Campanha e captura concluídas; consultar o encerramento acima.
 
-## Verifica��o da implementa��o inicial
+## Verificação da implementação inicial
 
-Testes de sele��o e su�te de servi�o passaram nesta sess�o, incluindo sondagens UDP autenticadas. Vet e builds Windows/Linux passaram. O rel�gio pode retornar dura��o zero para opera��es locais muito r�pidas; essas amostras v�lidas s�o preservadas, diferentemente de timeouts. Ainda � necess�rio validar o comando completo com duas r�plicas e coletar a campanha entre m�quinas.
+Testes de seleção e suíte de serviço passaram nesta sessão, incluindo sondagens UDP autenticadas. Vet e builds Windows/Linux passaram. O relógio pode retornar duração zero para operações locais muito rápidas; essas amostras válidas são preservadas, diferentemente de timeouts. Ainda é necessário validar o comando completo com duas réplicas e coletar a campanha entre máquinas.

@@ -8,7 +8,7 @@ Escopo: obrigatório completo, depois dashboard e nuvem. A escolha inicial é Go
 | 2 | Cliente-servidor | Senha correta aceita; senha incorreta rejeitada; listar arquivos; upload e download remotos; impedir caminhos fora da pasta; erros legíveis | Implementada em modo sequencial; avaliação manual em ETAPA2.md |
 | 3 | Robustez e observabilidade | Sessões isoladas, limite de recursos, RTO adaptativo, métricas em JSON/CSV; falhas não travam serviço | Concluída em 12/11/2026: concorrência UDP, recuperação e suíte com 80 MiB aprovadas no Windows; compilação Linux verificada |
 | 4 | Experimentos | Repetições dos quatro cenários, arquivos >=80 MB, variação de janela, gráficos e capturas | Concluída em 14/11/2026: três janelas, comparação/gráficos, captura e validação completa aprovados; Linux verificado por compilação |
-| 5 | Mini-CDN | Duas máquinas, sondagens repetidas, escolha pelo menor RTT, captura da seleção, comparação de desempenho | Pendente |
+| 5 | Mini-CDN | Duas máquinas, sondagens repetidas, escolha pelo menor RTT, captura da seleção, comparação de desempenho | Concluída no ensaio LAN desktop/notebook; cliente no desktop, cinco repetições por modo e captura conferida; ver results-etapa5/analysis.md |
 | 6 | Dashboard web | RTT, throughput, perdas, retransmissões e janela vindos do processo real | Pendente |
 | 7 | Nuvem IaaS | Servidor remoto autenticado, regra UDP explícita, comparação local/nuvem usando mesma configuração | Pendente |
 

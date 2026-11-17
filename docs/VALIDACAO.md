@@ -230,3 +230,7 @@ As retransmissões em loopback precisam ser investigadas na etapa 3: buffers, ag
 O roteiro `ETAPA3.md` descreve o diagnóstico e os critérios para continuar. WSL foi consultado e não está instalado; nenhuma dependência foi instalada nem política de proteção alterada.
 
 Diagnóstico posterior: o usuário forneceu eventos 3077 com Policy ID `{0283ac0f-fff1-49ae-ada1-8a933130cad6}`, bloqueando `service.test.exe`, `transfer.test.exe` e `rc2.exe`. A [documentação da Microsoft](https://learn.microsoft.com/pt-br/windows/security/application-security/application-control/app-control-for-business/operations/inbox-appcontrol-policies) identifica esse ID como `VerifiedAndReputableDesktop`, política do Smart App Control. A causa do bloqueio foi identificada; a execução da suíte continua pendente. Um ambiente Linux/WSL é uma alternativa de validação, condicionada à autorização para instalar e sem substituir a validação específica do Windows.
+
+## Etapa 5: captura conferida
+
+15 sessões pareadas; 50 sondagens respondidas; cinco escolhas pelo menor RTT mediano elegível. START/primeiro DATA/DONE conferidos. Erro de admissão no frame 1720028 preservado. Inspeção dirigida por scripts/check-lan-capture.py aprovada; timestamps usados porque frames das duas interfaces não estão necessariamente em ordem temporal. Etapa 5 encerrada no escopo LAN documentado.
