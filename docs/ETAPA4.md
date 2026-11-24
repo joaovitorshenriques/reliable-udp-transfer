@@ -1,14 +1,6 @@
-## Consolidação experimental — 14/11/2026
+# Etapa 4 — Experimentos com atraso e perda
 
-Campanhas de 80 MiB com janelas 16, 64 e 256 concluídas e verificadas: 120 transferências, 240 registros de métricas e 60 pares do emulador. Hashes/tamanhos e CSV/JSONL conferidos; zero descartes por fila e erros de envio. Comparação, IC95% e gráficos gerados em [comparacao-etapa4/comparison.md](comparacao-etapa4/comparison.md). Captura S3 e decodificação documentadas em CAPTURA-S3.md e capture-s3/capture.md.
-
-A janela 256 apresentou o maior goodput médio nos quatro cenários e nos dois sentidos. Em upload, o ganho 256/16 foi aproximadamente 15,72 vezes em S1, 15,81 em S2, 7,00 em S3 e 7,14 em S4. Com perdas, o ganho foi menor que a razão entre as janelas (16). Isso é compatível com custos de recuperação e bloqueio da base da janela; não isola causalmente cada custo. Há retransmissões mesmo sem perda injetada: não atribuí-las automaticamente a perda física. Os resultados são de loopback com emulação, não de enlace real entre máquinas.
-
-As campanhas ocorreram sequencialmente e os manifestos não registram hardware/commit; igualdade desses fatores depende do controle da execução pelo operador. Não foi realizado teste de significância entre janelas. A validação completa combinada `go run ./cmd/validate -large -stage4 -cross` foi aprovada no Windows em 14/11/2026, com build Linux aprovado (sem execução Linux). Não repetir campanhas longas já aprovadas.
-
-# Etapa 4 — cenários controlados (concluída)
-
-Esta etapa começa com emulação em Go, sem dependências externas e com os mesmos comandos no Windows e Linux. Não altera as configurações de rede do sistema operacional. A campanha da etapa 3 continua disponível com `go run ./cmd/experiment`, sem `-stage4`.
+A etapa usa emulação em Go com a biblioteca padrão. Não altera as configurações de rede do sistema operacional. A campanha da etapa 3 continua disponível com `go run ./cmd/experiment`, sem `-stage4`.
 
 ## Modelo experimental
 
@@ -27,13 +19,13 @@ A perda é Bernoulli independente por datagrama, em cada sentido, incluindo aute
 
 Não há limite de banda, jitter configurado ou reprodução de uma topologia real. Os casos S1–S4 são emulações, não medições entre Brasil/EUA ou de um enlace de satélite. Perdas fora do emulador (socket/SO) não são medidas diretamente por ele.
 
-## Primeiro: validar a integração
+## Validar a integração
 
 ```text
 go run ./cmd/validate -stage4 -cross
 ```
 
-Além da suíte normal, ativa `TestStage4UDP`: um upload e um download de 1 MiB em cada cenário, com verificação de hash, relatórios pareados e contadores de perda. Esse teste pequeno **não é um resultado experimental válido para a exigência de 80 MB**. Pode levar alguns minutos. O build Linux verifica compatibilidade de compilação, sem exigir execução Linux.
+Além da suíte normal, ativa `TestStage4UDP`: um upload e um download de 1 MiB em cada cenário, com verificação de hash, relatórios pareados e contadores de perda. Esse teste pequeno **não é um resultado experimental válido para a exigência de 80 MB**. Pode levar alguns minutos.
 
 ## Campanha de 80 MiB
 
@@ -73,3 +65,11 @@ Execute as campanhas separadamente, com a mesma máquina e configuração.
 Cada execução completa gera 40 transferências verificadas. As tabelas e figuras
 da campanha realizada estão na [comparação final](comparacao-etapa4/comparison.md).
 Para interpretar a captura de demonstração, consulte [CAPTURA-S3](CAPTURA-S3.md).
+
+## Resultados
+
+Campanhas de 80 MiB com janelas 16, 64 e 256 concluídas e verificadas: 120 transferências, 240 registros de métricas e 60 pares do emulador. Hashes/tamanhos e CSV/JSONL conferidos; zero descartes por fila e erros de envio. Comparação, IC95% e gráficos gerados em [comparacao-etapa4/comparison.md](comparacao-etapa4/comparison.md). Captura S3 e decodificação documentadas em CAPTURA-S3.md e capture-s3/capture.md.
+
+A janela 256 apresentou o maior goodput médio nos quatro cenários e nos dois sentidos. Em upload, o ganho 256/16 foi aproximadamente 15,72 vezes em S1, 15,81 em S2, 7,00 em S3 e 7,14 em S4. Com perdas, o ganho foi menor que a razão entre as janelas (16). Isso é compatível com custos de recuperação e bloqueio da base da janela; não isola causalmente cada custo. Há retransmissões mesmo sem perda injetada: não atribuí-las automaticamente a perda física. Os resultados são de loopback com emulação, não de enlace real entre máquinas.
+
+As campanhas ocorreram sequencialmente e os manifestos não registram hardware/commit; igualdade desses fatores depende do controle da execução pelo operador. Não foi realizado teste de significância entre janelas.

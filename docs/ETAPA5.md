@@ -1,10 +1,4 @@
-# Etapa 5 concluída no escopo LAN
-
-Desktop 192.168.2.128 (cabo, cliente e réplica) e notebook 192.168.2.150 (Wi-Fi). Foram verificadas 15 transferências de 80 MiB com relatórios pareados e hashes iguais. Cinco seleções escolheram corretamente o desktop. O PCAP confirma 50 sondagens respondidas e START, primeiro DATA e DONE das 15 sessões. CRC validado nos frames exportados, não em todos os pacotes da captura.
-
-Resultados: [análise](results-etapa5/analysis.md) e [evidências da captura](results-etapa5/capture.md). Limitações: cliente local favorece o desktop; rodada 5 retomada após limite de endpoints; não foi uma campanha contínua nem comparação entre dois caminhos remotos. Suíte Windows, vet e build Linux aprovados antes da campanha. Não é necessário repetir as transferências.
-
-# Etapa 5 — mini-CDN (implementação inicial)
+# Etapa 5 — Mini-CDN
 
 O comando `rc2 cdn` consulta de duas a oito réplicas, alterna a ordem a cada rodada e escolhe o menor RTT mediano entre servidores com maioria de respostas válidas. Padrão: cinco sondagens autenticadas, sem retransmissão, timeout de um segundo. Falhas são registradas e não viram amostras de RTT zero. Empates preservam a ordem de entrada. O RTT inclui processamento da aplicação. Cada sondagem usa sessão aleatória; respostas precisam ter origem e sessão corretas e CRC válido.
 
@@ -37,13 +31,13 @@ São comandos iguais no Windows/Linux. Os destinos devem ser novos e suas pastas
 go run ./cmd/validate -cross
 ```
 
-Inclui TestProbeAuthenticationAndReuse (senha incorreta rejeitada, cinco probes e listagem posterior no mesmo socket) e testes determinísticos de seleção (outlier, indisponibilidade, cancelamento, duplicatas). No ambiente do assistente, sondagens UDP podem ser bloqueadas: rode a suíte no terminal normal.
+Inclui TestProbeAuthenticationAndReuse (senha incorreta rejeitada, cinco probes e listagem posterior no mesmo socket) e testes determinísticos de seleção (outlier, indisponibilidade, cancelamento, duplicatas).
 
 Para um ensaio funcional em uma máquina, suba dois servidores com portas 9000/9001 e diretórios separados. Use `127.0.0.1:9000,127.0.0.1:9001` no cliente. Isso valida o fluxo, mas não conclui a exigência de duas máquinas.
 
 Teste também um servidor indisponível, senha incorreta em ambos e destino existente. Não deve haver download quando nenhuma réplica for elegível. Se o servidor escolhido falhar durante o download, o comando retorna erro; repetir exige nova seleção e destino válido.
 
-## Evidências para concluir a etapa
+## Como reproduzir a avaliação
 
 1. Registrar IPs, máquinas, sistema, versão Go, hash do arquivo e configuração.
 2. Capturar na interface da rede real com filtro `udp port 9000` (loopback só para ensaio local). Carregar scripts/rc2.lua: sondagens aparecem como REQUEST/RESPONSE; a sessão permite correlacionar pares. Não compartilhar capturas com senha real: a autenticação atual não é criptografada.
@@ -52,6 +46,8 @@ Teste também um servidor indisponível, senha incorreta em ambos e destino exis
 
 Campanha e captura concluídas; consultar o encerramento acima.
 
-## Verificação da implementação inicial
+## Resultados em rede local
 
-Testes de seleção e suíte de serviço passaram nesta sessão, incluindo sondagens UDP autenticadas. Vet e builds Windows/Linux passaram. O relógio pode retornar duração zero para operações locais muito rápidas; essas amostras válidas são preservadas, diferentemente de timeouts. Ainda é necessário validar o comando completo com duas réplicas e coletar a campanha entre máquinas.
+Desktop 192.168.2.128 (cabo, cliente e réplica) e notebook 192.168.2.150 (Wi-Fi). Foram verificadas 15 transferências de 80 MiB com relatórios pareados e hashes iguais. Cinco seleções escolheram corretamente o desktop. O PCAP confirma 50 sondagens respondidas e START, primeiro DATA e DONE das 15 sessões. CRC validado nos frames exportados, não em todos os pacotes da captura.
+
+Resultados: [análise](results-etapa5/analysis.md) e [evidências da captura](results-etapa5/capture.md). Limitações: cliente local favorece o desktop; rodada 5 retomada após limite de endpoints; não foi uma campanha contínua nem comparação entre dois caminhos remotos.

@@ -1,6 +1,6 @@
 # Etapa 6 — Dashboard de métricas
 
-No Windows ou Linux, abra o painel com dados reais de uma campanha da etapa 4:
+O dashboard exibe as métricas de transferência e os contadores do emulador. Na raiz do projeto, execute:
 
 ```text
 go run ./cmd/dashboard -metrics results/etapa4-1490099931/metrics.jsonl -emulation results/etapa4-1490099931/emulation.jsonl
