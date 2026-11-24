@@ -139,3 +139,11 @@ Mantenha arquivo e janela; faça pelo menos cinco repetições por grupo e regis
 A/B isolam buffers; B/C isolam temporização. Todos já usam escrita em blocos, portanto A não reproduz exatamente a etapa 2. A referência antiga foi uma execução de upload com 80,11 s e 1.081 retransmissões; não permite atribuir causalidade.
 
 Depois da validação: variar janela (16/64/256), testar entre máquinas e construir os quatro cenários controlados. Sessões simultâneas, throughput no fio e perda experimental permanecem pendentes.
+
+## Atendimento simultâneo e limites
+
+O servidor despacha datagramas de uma única porta UDP para até **oito endpoints autenticados (IP e porta)**, cada um com estado, prazo de leitura e fila próprios. Cada endpoint executa uma operação por vez; um pedido novo do mesmo endpoint durante uma transferência recebe ocupado. Outros endpoints podem transferir ou listar simultaneamente. Não há multiplexação de vários fluxos dentro de uma única sessão.
+
+Cada fila comporta 256 datagramas; quando cheia, novos datagramas são descartados e o transporte depende de retransmissões. O limite padrão por arquivo é 1 GiB, ajustável com `-max-size`; janela padrão de 64 pacotes. A publicação sem sobrescrita também protege duas tentativas concorrentes de enviar o mesmo nome: no máximo uma publica o destino.
+
+Endpoints ociosos são liberados após aproximadamente dois minutos com a configuração padrão; esse período preserva o cache de pedidos concluídos. Os oito slots incluem endpoints ociosos ainda retidos, portanto várias invocações rápidas da CLI podem atingir o limite. Quando cheio, o servidor informa limite de clientes. O prazo de retenção aumenta se os limites de temporização configurados forem maiores. Não há limite global de armazenamento nem quota de disco por usuário.

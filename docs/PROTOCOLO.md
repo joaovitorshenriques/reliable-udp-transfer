@@ -40,3 +40,13 @@ REQUEST leva JSON com `operation`, `password`, `name` (transferências) e `offse
 Cada pedido autentica por senha simples. O cliente retransmite REQUEST até receber RESPONSE ou atingir o limite. Durante uma transferência, o servidor repete a resposta de autorização se receber novamente o pedido original. O transporte então usa um novo ID de sessão e só aceita o endereço UDP autenticado. Todos os pacotes utilizam a mesma porta do serviço.
 
 O servidor aceita apenas uma operação por vez e mantém cache limitado de pedidos. Ao finalizar, marca o pedido como encerrado para impedir execução duplicada. Os dados e credenciais ainda não são criptografados. Detalhes e limitações em ETAPA2.md.
+
+## Métricas e limitações
+
+`goodput_mbps` mede bytes úteis do arquivo por duração. No emissor, inclui negociação e confirmação final, mas não o hash prévio; no receptor, termina após publicar o arquivo. Use `session`, `operation`, `endpoint` e `role` para correlacionar as pontas. RTT e retransmissões descrevem o emissor; zeros no receptor não são medições do emissor. Retransmissões não medem diretamente perda da rede.
+
+`transport_bytes_*` conta bytes RC2 (cabeçalho e payload), sem UDP/IP/Ethernet e sem comandos de serviço. Datagramas descartados antes do transporte, como fila de cliente cheia, não são contabilizados como recebidos pelo transporte. Não há medição de throughput no fio nesta etapa.
+
+A senha trafega sem criptografia. Use apenas loopback ou rede isolada; ainda não exponha o servidor à Internet. CRC32 e SHA-256 não autenticam remetentes. `send`/`receive` são comandos diretos de transporte sem autenticação. Mantenha o diretório do servidor sob controle de usuários locais confiáveis.
+
+Não há controle de congestionamento ou retomada de arquivos. A publicação no Windows usa MoveFile sem substituição; no Linux usa hard link e depende de suporte do filesystem. O temporário fica no diretório de destino. Uma interrupção prolongada após publicação pode deixar o emissor sem confirmação mesmo com o arquivo já salvo.
