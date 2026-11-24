@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RC2 · Transferência de arquivos</title>
+<style>
+:root { color-scheme: dark; font: 14px/1.45 system-ui, sans-serif; background: #141414; color: #ededed; --border: #424242; --mono: ui-monospace, Consolas, monospace; }
+body { margin: 16px auto; padding: 0 12px; max-width: 980px; }
+header { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; }
+nav { display: flex; gap: 4px; margin: 12px 0 4px; }
+section { border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin: 8px 0; background: #1c1c1c; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+label { display: grid; gap: 4px; min-width: 0; }
+input, button { font: inherit; min-height: 30px; box-sizing: border-box; padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border); background: #242424; color: inherit; max-width: 100%; }
+button { cursor: pointer; } button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid #a7c7ff; outline-offset: 2px; }
+[aria-pressed=true] { border-bottom-color: #a7c7ff; }
+.mono, input[type=text], td:first-child, td.numeric { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+td, th { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.numeric { text-align: right; }
+.scroll { overflow: auto; }
+p { margin: 8px 0; } small { color: #b2b2b2; }
+#metrics { overflow-wrap: anywhere; }
+</style>
+<main>
+<header><small class="mono">RC2 / UDP</small><h1>Transferência de arquivos</h1></header>
+<nav aria-label="Modo de operação">
+  <button id="direct-tab" aria-pressed="true">Transferência direta</button>
+  <button id="cdn-tab" aria-pressed="false">Mini-CDN</button>
+</nav>
+<section aria-label="Conexão">
+  <div class="row">
+    <label>Servidor / réplica A<input type="text" id="address" value="127.0.0.1:9000" spellcheck="false"></label>
+    <label id="replica-label" hidden>Réplica B<input type="text" id="replica" placeholder="192.168.2.150:9000" spellcheck="false"></label>
+    <label>Senha<input id="password" type="password" maxlength="256"></label>
+    <button id="list">Listar arquivos</button>
+    <button id="probe" hidden>Medir RTT e selecionar</button>
+  </div>
+</section>
+<section id="replicas" hidden>
+  <h2>Sondagens das réplicas</h2>
+  <div class="scroll"><table><thead><tr><th>Endereço</th><th class="numeric">Respostas</th><th class="numeric">RTT mediano</th><th>Resultado</th></tr></thead><tbody id="probe-results"></tbody></table></div>
+</section>
+<section>
+  <h2>Arquivos disponíveis</h2>
+  <div class="scroll"><table><thead><tr><th>Arquivo</th><th class="numeric">Tamanho</th><th>Ação</th></tr></thead><tbody id="files"></tbody></table></div>
+  <p id="empty"><small>Liste os arquivos do servidor para iniciar.</small></p>
+</section>
+<section id="upload-panel">
+  <h2>Enviar arquivo</h2>
+  <div class="row">
+    <label>Arquivo local<input id="file" type="file"></label>
+    <label>Nome no servidor (opcional)<input type="text" id="name" maxlength="120"></label>
+    <button id="upload">Enviar</button>
+  </div>
+</section>
+<p id="status" role="status"></p>
+<section id="summary" hidden><h2>Última transferência</h2><p id="metrics" class="mono"></p></section>
+</main>
+<script>
+const el = id => document.getElementById(id);
+const number = new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 4});
+let mode = 'direct';
+let busy = false;
+
+function clearFiles() {
+  el('files').replaceChildren();
+  el('empty').hidden = false;
+  el('empty').textContent = 'Liste os arquivos do servidor para iniciar.';
+}
+function invalidate() {
+  el('replicas').hidden = true;
+  clearFiles();
+}
+for (const id of ['address', 'replica', 'password']) el(id).addEventListener('input', invalidate);
+for (const tab of ['direct', 'cdn']) {
+  el(tab + '-tab').onclick = () => {
+    mode = tab;
+    invalidate();
+    el('direct-tab').setAttribute('aria-pressed', String(tab === 'direct'));
+    el('cdn-tab').setAttribute('aria-pressed', String(tab === 'cdn'));
+    el('replica-label').hidden = tab === 'direct';
+    el('probe').hidden = tab === 'direct';
+    el('list').hidden = tab === 'cdn';
+    el('upload-panel').hidden = tab === 'cdn';
+    el('status').textContent = '';
+  };
+}
+async function request(operation, address, extra = {}) {
+  const body = new FormData();
+  for (const [key, value] of Object.entries({address, password: el('password').value, ...extra})) body.append(key, value);
+  const response = await fetch('/api/' + operation, {method: 'POST', headers: {'X-RC2-Request': '1'}, body});
+  if (!response.ok) throw new Error((await response.text()).trim());
+  return response;
+}
+async function run(message, action) {
+  if (busy) return;
+  busy = true;
+  for (const control of document.querySelectorAll('button, input')) control.disabled = true;
+  el('status').textContent = message;
+  try {
+    await action();
+  } catch (error) {
+    el('status').textContent = 'Falha: ' + error.message;
+  } finally {
+    busy = false;
+    for (const control of document.querySelectorAll('button, input')) control.disabled = false;
+  }
+}
+function cell(row, value, numeric = false) {
+  const td = row.insertCell();
+  td.textContent = value;
+  if (numeric) td.className = 'numeric';
+  return td;
+}
+async function list(address) {
+  clearFiles();
+  const files = await (await request('list', address)).json();
+  for (const file of files || []) {
+    const row = el('files').insertRow();
+    cell(row, file.name);
+    cell(row, number.format(file.size) + ' B', true);
+    const button = document.createElement('button');
+    button.textContent = 'Baixar';
+    button.onclick = () => run('Recebendo ' + file.name + '…', async () => {
+      const response = await request('download', address, {name: file.name});
+      const metrics = JSON.parse(response.headers.get('X-RC2-Metrics'));
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      summary('Download concluído', file.name, address, metrics);
+    });
+    button.disabled = busy;
+    row.insertCell().append(button);
+  }
+  el('empty').hidden = Boolean(files?.length);
+  el('empty').textContent = 'Nenhum arquivo disponível.';
+  el('status').textContent = 'Listagem recebida de ' + address;
+}
+function summary(message, name, address, metrics) {
+  el('status').textContent = message;
+  el('summary').hidden = false;
+  el('metrics').textContent = [
+    name, address, number.format(metrics.seconds) + ' s',
+    number.format(metrics.goodput_mbps) + ' Mbit/s de goodput',
+    'SHA-256 ' + metrics.sha256
+  ].join(' · ');
+}
+el('list').onclick = () => run('Consultando servidor…', () => list(el('address').value));
+el('upload').onclick = () => run('Enviando arquivo…', async () => {
+  const file = el('file').files[0];
+  if (!file) throw new Error('Selecione um arquivo.');
+  const name = el('name').value || file.name;
+  const address = el('address').value;
+  const metrics = await (await request('upload', address, {name, file})).json();
+  clearFiles();
+  summary('Upload concluído', name, address, metrics);
+});
+el('probe').onclick = () => run('Medindo RTT das réplicas…', async () => {
+  invalidate();
+  const result = await (await request('probe', el('address').value, {replica: el('replica').value})).json();
+  el('probe-results').replaceChildren();
+  el('replicas').hidden = false;
+  for (const replica of result.results || []) {
+    const row = el('probe-results').insertRow();
+    cell(row, replica.address);
+    cell(row, (replica.samples_ms?.length || 0) + ' / 5', true);
+    cell(row, replica.eligible ? number.format(replica.median_ms) + ' ms' : '—', true);
+    cell(row, result.selected === replica.address ? 'Selecionada' : replica.eligible ? 'Disponível' : 'Sem respostas suficientes');
+  }
+  if (result.error) throw new Error(result.error);
+  await list(result.selected);
+});
+</script>
+</html>

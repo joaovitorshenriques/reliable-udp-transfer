@@ -22,6 +22,16 @@ go run ./cmd/rc2 download -addr 127.0.0.1:9000 -name exemplo.md -file recebido.m
 
 Use nomes novos ao repetir o teste. Para executar a validação automatizada, rode `go run ./cmd/validate -cross`.
 
+### Executar pelo navegador
+
+Com o servidor UDP em execução, abra outro terminal na raiz do projeto e rode:
+
+```text
+go run ./cmd/web
+```
+
+Acesse [http://127.0.0.1:8081](http://127.0.0.1:8081) e informe o endereço e a senha do servidor. A interface permite listar, enviar e baixar arquivos, além de selecionar réplicas da mini-CDN. Veja o [guia da interface](docs/INTERFACE.md).
+
 ## Etapas do projeto
 
 | Etapa | Documentação |
