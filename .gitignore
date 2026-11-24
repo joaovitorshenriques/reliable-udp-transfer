@@ -7,3 +7,15 @@ results/
 *.part
 password.txt
 __pycache__/
+.agents
+/skills/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.pcap
+*.pcapng
+*.exe
+credentials.json

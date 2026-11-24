@@ -60,19 +60,16 @@ Cada execução cria `results/etapa4-<identificador>/`:
 
 Fila cheia ou erro de envio invalida a execução para comparação controlada: a campanha termina sem COMPLETE. Datagramas sorteados como perda são esperados, não invalidam a execução. Contadores de pendentes/cancelados são explicitados ao fechar o emulador; podem incluir mensagens redundantes após a conclusão do protocolo e devem ser inspecionados.
 
-## Estado e próximas entregas
-
-Implementados: agendamento, perda com semente, contadores, quatro cenários, integração opt-in e arquivos de saída. A integração UDP local foi aprovada em 13/11/2026 com upload/download de 1 MiB nos quatro cenários, suíte completa, vet e builds Windows/Linux. A campanha de 80 MiB com janela 64 foi concluída e analisada: veja [resultados](results-etapa4-w64/analysis.md). Os gráficos foram gerados em PNG/PDF. Variação de janela e captura S3 concluídas; consulte a consolidação acima. Não há resultados simulados preenchidos como evidência. Matplotlib foi instalado em `.tools/python-packages` com autorização. O instalador oficial do Wireshark foi baixado e verificado, mas sua abertura falhou nesta sessão; Wireshark/Npcap foram posteriormente instalados e utilizados na captura S3. Nenhum commit foi feito para esta etapa.
-
-## Gerar gráficos (Windows e Linux)
-
-Requer Python e Matplotlib. A instalação opcional abaixo fica restrita ao projeto:
+## Reproduzir os experimentos
 
 ```text
-python -m pip install --target .tools/python-packages matplotlib
-python scripts/plot-stage4.py results/etapa4-1490099931 --out docs/results-etapa4-w64
+go run ./cmd/validate -large -stage4 -cross
+go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 16
+go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 64
+go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 256
 ```
 
-Em sistemas onde o executável se chama `python3`, substitua `python` por `python3`. O script valida novamente a campanha, gera o resumo e quatro gráficos em PNG/PDF: goodput, tempo, RTT e retransmissões. As duas operações usam métricas do emissor. As barras representam IC95% t de Student; goodput e tempo usam escala logarítmica. A análise sem gráficos continua usando apenas a biblioteca padrão.
-
-Roteiro de fechamento: [verificação da etapa 4](VERIFICAR-ETAPA4.md). Inclui reprodução das campanhas, comparação automática e inspeção da captura com decodificador RC2.
+Execute as campanhas separadamente, com a mesma máquina e configuração.
+Cada execução completa gera 40 transferências verificadas. As tabelas e figuras
+da campanha realizada estão na [comparação final](comparacao-etapa4/comparison.md).
+Para interpretar a captura de demonstração, consulte [CAPTURA-S3](CAPTURA-S3.md).

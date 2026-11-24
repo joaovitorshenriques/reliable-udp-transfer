@@ -81,7 +81,7 @@ Comando comum a Windows e Linux, na raiz do repositório:
 go run ./cmd/validate -large -cross
 ```
 
-Ele executa testes (incluindo 80 MiB), análise estática e compilação nativa, parando no primeiro erro. Também verifica compilação para o outro SO; isso não atesta execução naquele sistema, que está fora do escopo atual. Com compilador portátil, substitua `go` por `.\.tools\go\bin\go.exe` no Windows ou por `sh scripts/go.sh` no Linux. Não é preciso instalar PowerShell no Linux.
+Ele executa testes (incluindo 80 MiB), análise estática e compilação nativa, parando no primeiro erro. Também verifica compilação para o outro SO; isso não atesta execução naquele sistema, que está fora do escopo atual. Com compilador portátil, substitua `go` por `.\.tools\go\bin\go.exe` no Windows ou pelo executável `.tools/go/bin/go` no Linux. Não é preciso instalar PowerShell no Linux.
 
 O teste grande é uma verificação de integridade do transporte, não substitui a comparação de upload/download com cinco repetições por grupo abaixo.
 

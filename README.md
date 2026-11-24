@@ -68,7 +68,7 @@ A implementação inicial mantém os mesmos comandos nos dois sistemas:
 go run ./cmd/validate -stage4 -cross
 ```
 
-Esse comando valida os quatro cenários com arquivos de 1 MiB. Após aprovação, a campanha obrigatória usa `go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 64`. Pode levar horas. Parâmetros, interpretação das taxas e pendências estão em [ETAPA4.md](docs/ETAPA4.md). A campanha com janela 64 foi concluída e analisada; variação de janela, capturas e gráficos foram concluídos. Veja [resultados da janela 64](docs/results-etapa4-w64/analysis.md).
+Esse comando valida os quatro cenários com arquivos de 1 MiB. Após aprovação, a campanha obrigatória usa `go run ./cmd/experiment -stage4 -repeats 5 -mib 80 -window 64`. Pode levar horas. Parâmetros, interpretação das taxas e pendências estão em [ETAPA4.md](docs/ETAPA4.md). A campanha com janela 64 foi concluída e analisada; variação de janela, capturas e gráficos foram concluídos. Veja [resultados da janela 64](docs/comparacao-etapa4/w64/analysis.md).
 
 ## Compilar para distribuição
 
@@ -76,7 +76,7 @@ Esse comando valida os quatro cenários com arquivos de 1 MiB. Após aprovação
 go build -o bin/ ./cmd/rc2
 ```
 
-O Go gera `rc2.exe` no Windows e `rc2` no Linux. Os comandos `go run` acima são a opção comum aos dois sistemas; executar diretamente o binário usa a convenção de caminhos do terminal local. Compilador portátil também é aceito; os wrappers opcionais em `scripts/` não são requisitos do projeto.
+O Go gera `rc2.exe` no Windows e `rc2` no Linux. Os comandos `go run` acima são a opção comum aos dois sistemas; executar diretamente o binário usa a convenção de caminhos do terminal local.
 
 ## Métricas e limitações
 
@@ -90,7 +90,6 @@ Não há controle de congestionamento ou retomada de arquivos. A publicação no
 
 ## Documentação
 
-- [Plano e próximos passos](docs/PLANO.md)
 - [Formato do protocolo](docs/PROTOCOLO.md)
 - [Evidências de validação](docs/VALIDACAO.md)
 - [Histórico da etapa 2](docs/ETAPA2.md)
@@ -98,8 +97,32 @@ Não há controle de congestionamento ou retomada de arquivos. A publicação no
 
 Experimentos controlados concluídos. Mini-CDN, dashboard e nuvem são as próximas entregas. Não interpretar resultados históricos como aprovação de alterações posteriores.
 
-Roteiro de fechamento: [verificação da etapa 4](docs/VERIFICAR-ETAPA4.md). Inclui reprodução das campanhas, comparação automática e inspeção da captura com decodificador RC2.
 
 Campanhas das três janelas concluídas: [comparação final](docs/comparacao-etapa4/comparison.md). Validação completa combinada aprovada; não é necessário repetir as campanhas.
 
 Mini-CDN validada na LAN: [etapa 5](docs/ETAPA5.md) e [resultados](docs/results-etapa5/analysis.md). Cliente local e retomada da campanha estão documentados.
+
+
+## Dashboard de métricas (etapa 6)
+
+No Windows ou Linux, abra o painel com dados reais de uma campanha da etapa 4:
+
+```text
+go run ./cmd/dashboard -metrics results/etapa4-1490099931/metrics.jsonl -emulation results/etapa4-1490099931/emulation.jsonl
+```
+
+Troque o diretório pela sua campanha. Abra http://127.0.0.1:8080. Use
+`-port` para escolher outra porta.
+
+Para acompanhar novos resultados do servidor, use
+`go run ./cmd/dashboard -metrics results/dashboard.jsonl` em um terminal
+e adicione `-metrics results/dashboard.jsonl` ao comando `rc2 serve`
+em outro. O painel atualiza a cada dois segundos e mostra os últimos 200
+registros de cada fonte após serem gravados. A janela exibida pertence à
+sessão registrada. O RTT e as retransmissões usam a ponta emissora.
+Throughput RC2 inclui os bytes de protocolo observados pela ponta durante
+o intervalo da transferência, sem cabeçalhos UDP/IP. Goodput conta bytes úteis.
+
+Perdas são exibidas por direção do emulador a partir dos contadores observados,
+com descartes aleatórios e de fila separados. Em transferências reais sem
+contadores de perda, o painel informa que essa medição está indisponível.

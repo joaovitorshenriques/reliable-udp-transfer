@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RC2 · Métricas de rede</title>
+<style>
+:root {
+  color-scheme: dark;
+  --canvas: #141414;
+  --surface: #1c1c1c;
+  --border: #3a3a3a;
+  --text: #ededed;
+  --muted: #b2b2b2;
+  --focus: #a7c7ff;
+  --mono: ui-monospace, Consolas, "Liberation Mono", monospace;
+  background: var(--canvas);
+  color: var(--text);
+  font: 14px/1.45 system-ui, sans-serif;
+}
+body { margin: 0 auto; padding: 16px; max-width: 1180px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 14px; margin: 0 0 8px; }
+p, small, label { color: var(--muted); }
+.brand { font: 12px var(--mono); color: var(--muted); }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-top: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(148px, 100%), 1fr)); gap: 4px; margin: 8px 0; }
+.card { min-width: 0; border: 1px solid var(--border); border-radius: 4px; padding: 8px; }
+.card strong { display: block; margin-top: 4px; font: 600 13px/1.45 var(--mono); overflow-wrap: anywhere; }
+select { font: 12px var(--mono); padding: 4px 8px; min-height: 30px; max-width: 100%; background: var(--canvas); border: 1px solid #666; border-radius: 4px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.scroll { overflow: auto; max-height: 288px; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+td, th { padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface); }
+#history td:first-child, #history td:nth-child(n+4), #loss td:nth-child(n+2), #status { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+#history td:nth-child(n+4), #loss td:nth-child(n+2), .numeric { text-align: right; }
+#status { min-height: 1.45em; margin: 8px 0; font-size: 12px; }
+#loss-note { margin: 0 0 4px; }
+@media (max-width: 540px) { body { padding: 8px; } section { padding: 8px; } }
+</style>
+<main>
+<header><span class="brand">RC2 / UDP</span><h1>Métricas de rede</h1></header>
+<p id="status" role="status">Carregando métricas…</p>
+<section>
+<h2>Transferência selecionada</h2>
+<label for="transfer">Sessão</label> <select id="transfer" disabled></select>
+<div class="cards" id="cards"></div>
+<small>Throughput RC2 inclui cabeçalhos e retransmissões observados nesta ponta. Goodput conta os bytes úteis do arquivo.</small>
+</section>
+<section><h2>Histórico recente</h2><div class="scroll"><table>
+<thead><tr><th>Sessão</th><th>Operação / ponta</th><th>Resultado</th><th class="numeric">Throughput RC2</th><th class="numeric">Goodput</th></tr></thead>
+<tbody id="history"></tbody></table></div></section>
+<section><h2>Perdas medidas pelo emulador</h2>
+<p id="loss-note"></p>
+<div class="scroll"><table><thead><tr><th>Cenário / repetição</th><th class="numeric">Janela</th><th class="numeric">Cliente → servidor</th><th class="numeric">Servidor → cliente</th></tr></thead>
+<tbody id="loss"></tbody></table></div>
+<small>Por par de upload/download. Percentual de descartes aleatórios sobre os datagramas observados. Descartes de fila aparecem separadamente.</small>
+</section>
+</main>
+<script>
+const byId = id => document.getElementById(id);
+const number = new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 3});
+const format = (value, unit = '') => Number.isFinite(value) ? number.format(value) + unit : '—';
+const picker = byId('transfer');
+let rows = [], previous = '';
+const label = row => [row.group, row.operation, row.endpoint, row.metrics.role].filter(Boolean).join(' / ');
+const key = row => [row.metrics.session, row.endpoint, row.operation, row.timestamp].join('|');
+function throughput(m) {
+  const bytes = m.role === 'sender' ? m.transport_bytes_sent : m.role === 'receiver' ? m.transport_bytes_received : null;
+  return m.seconds > 0 && Number.isFinite(bytes) ? bytes * 8 / m.seconds / 1e6 : null;
+}
+function fillTable(target, values) {
+  target.replaceChildren(...values.map(values => {
+    const tr = document.createElement('tr');
+    for (const value of values) tr.insertCell().textContent = value;
+    return tr;
+  }));
+}
+function showDetails() {
+  const row = rows[Number(picker.value)];
+  byId('cards').replaceChildren();
+  if (!row) return;
+  const m = row.metrics;
+  const values = [
+    ['RTT médio DATA/ACK', m.rtt_samples > 0 ? format(m.mean_data_rtt_ms, ' ms') : 'Sem amostras'],
+    ['Throughput RC2', format(throughput(m), ' Mbit/s')],
+    ['Goodput', m.seconds > 0 ? format(m.goodput_mbps, ' Mbit/s') : '—'],
+    ['Retransmissões DATA', m.role === 'sender' ? format(m.data_retransmissions) : 'Só no emissor'],
+    ['Janela da sessão', m.window_packets > 0 ? format(m.window_packets, ' pacotes') : '—']
+  ];
+  for (const [title, value] of values) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const caption = document.createElement('small');
+    const reading = document.createElement('strong');
+    caption.textContent = title;
+    reading.textContent = value;
+    card.append(caption, reading);
+    byId('cards').append(card);
+  }
+}
+picker.addEventListener('change', showDetails);
+function lossCell(direction) {
+  if (!direction?.datagrams_seen) return '—';
+  return format(100 * direction.random_drops / direction.datagrams_seen, '%') +
+    ' · fila: ' + format(direction.queue_drops);
+}
+async function refresh() {
+  try {
+    const response = await fetch('/api/metrics');
+    if (!response.ok) throw new Error();
+    const snapshot = await response.json();
+    const status = snapshot.warnings.slice();
+    if (snapshot.skipped) status.push(snapshot.skipped + ' linha(s) incompleta(s) ou inválida(s).');
+    byId('status').textContent = status.join(' ') || 'Atualização automática a cada 2 s.';
+    const signature = JSON.stringify(snapshot);
+    if (signature === previous) return;
+    previous = signature;
+    const oldIndex = Number(picker.value);
+    const oldKey = oldIndex > 0 && rows[oldIndex] ? key(rows[oldIndex]) : '';
+    rows = snapshot.transfers.reverse();
+    picker.replaceChildren(...rows.map((row, index) =>
+      new Option((row.metrics.session || 'Sem sessão') + ' · ' + label(row), index)));
+    picker.disabled = !rows.length;
+    if (!rows.length) picker.add(new Option('Nenhuma transferência registrada'));
+    picker.selectedIndex = Math.max(0, rows.findIndex(row => key(row) === oldKey));
+    showDetails();
+    fillTable(byId('history'), rows.map(row => [
+      row.metrics.session || '—', label(row), row.success ? 'Concluída' : 'Falhou',
+      format(throughput(row.metrics), ' Mbit/s'),
+      row.metrics.seconds > 0 ? format(row.metrics.goodput_mbps, ' Mbit/s') : '—'
+    ]));
+    byId('loss-note').textContent = snapshot.loss.length
+      ? 'Descartes observados em cada direção.'
+      : 'Sem dados de perda. Carregue o JSONL do emulador para ver esta medição.';
+    fillTable(byId('loss'), snapshot.loss.reverse().map(row => [
+      row.group + ' / ' + row.repetition, format(row.window_packets),
+      lossCell(row.client_to_server), lossCell(row.server_to_client)
+    ]));
+  } catch {
+    byId('status').textContent = 'Falha ao atualizar. Verifique se o dashboard continua rodando.';
+  } finally {
+    setTimeout(refresh, 2000);
+  }
+}
+refresh();
+</script>

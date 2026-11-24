@@ -30,11 +30,11 @@ Decodificador Lua carregado com sucesso pelo TShark 4.6.9 na captura existente; 
 
 Analisados os arquivos de `results/etapa4-1490099931`: COMPLETE presente, 80 registros de transporte, 40 sessões pareadas e 20 registros de emulação. Todos os hashes/tamanhos/sucessos corretos; configurações e sementes conferidas com o manifesto; CSV/JSONL consistentes. Zero descartes por fila cheia, erros de envio ou pendentes/cancelados. Cinco repetições por cenário, upload e download.
 
-Resumo e IC95% t de Student em [results-etapa4-w64/analysis.md](results-etapa4-w64/analysis.md), tabela numérica em `results-etapa4-w64/summary.csv`. Médias de goodput do emissor (upload/download): S1 23,3184/23,2777; S2 5,9464/5,9463; S3 2,2430/2,2097; S4 0,5721/0,5684 Mbit/s. RTT médio próximo de 25,7/100,7/100,8/400,8 ms. Em S3/S4, perdas observadas por sentido entre 4,9849% e 5,0370%.
+Resumo e IC95% t de Student em [comparacao-etapa4/w64/analysis.md](comparacao-etapa4/w64/analysis.md), tabela numérica em `comparacao-etapa4/w64/summary.csv`. Médias de goodput do emissor (upload/download): S1 23,3184/23,2777; S2 5,9464/5,9463; S3 2,2430/2,2097; S4 0,5721/0,5684 Mbit/s. RTT médio próximo de 25,7/100,7/100,8/400,8 ms. Em S3/S4, perdas observadas por sentido entre 4,9849% e 5,0370%.
 
 S2 apresentou 918 retransmissões no upload e 3162 no download (totais das cinco repetições), apesar de nenhuma perda sorteada. A causa não foi comprovada: requer captura/análise de temporização; não inferir perda física a partir desse contador. S1 não apresentou retransmissões. O resumo usa o emissor em ambas as operações; os números de download do terminal eram do receptor.
 
-Análise reproduzível com Python e biblioteca padrão, sem instalar dependências: `python scripts/analyze-stage4.py results/etapa4-1490099931 --out docs/results-etapa4-w64`. Os hashes dos arquivos de entrada estão no relatório. Após autorização, Matplotlib 3.11.2 foi instalado em `.tools/python-packages` e validado por importação e geração dos quatro gráficos PNG/PDF via `scripts/plot-stage4.py`. O instalador oficial Wireshark 4.6.9 foi baixado: SHA-256 `bf9b5ce8a89f244c376a9b1a946276eaa06463dde3e33069a34d7f102f5878cf` igual ao appcast oficial e assinatura Authenticode válida da Wireshark Foundation. A abertura falhou com "Realocação Inválida da DLL do Sistema"; Wireshark/Npcap permanecem pendentes. Não foram feitas capturas nem commits.
+Os resumos e gráficos da campanha estão em [comparacao-etapa4](comparacao-etapa4/comparison.md).
 
 ## Etapa 4 — integração UDP aprovada (13/11/2026)
 
@@ -233,4 +233,4 @@ Diagnóstico posterior: o usuário forneceu eventos 3077 com Policy ID `{0283ac0
 
 ## Etapa 5: captura conferida
 
-15 sessões pareadas; 50 sondagens respondidas; cinco escolhas pelo menor RTT mediano elegível. START/primeiro DATA/DONE conferidos. Erro de admissão no frame 1720028 preservado. Inspeção dirigida por scripts/check-lan-capture.py aprovada; timestamps usados porque frames das duas interfaces não estão necessariamente em ordem temporal. Etapa 5 encerrada no escopo LAN documentado.
+15 sessões pareadas; 50 sondagens respondidas; cinco escolhas pelo menor RTT mediano elegível. START/primeiro DATA/DONE conferidos. Erro de admissão no frame 1720028 preservado. Inspeção dirigida dos pacotes aprovada; timestamps usados porque frames das duas interfaces não estão necessariamente em ordem temporal. Etapa 5 encerrada no escopo LAN documentado.
